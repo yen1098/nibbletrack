@@ -23,7 +23,7 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${ZAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'glm-4-flash', // using flash model for speed and cost efficiency
+        model: 'glm-4', // using flash model for speed and cost efficiency
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: mealText }
