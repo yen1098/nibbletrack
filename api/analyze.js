@@ -6,36 +6,43 @@ export default async function handler(req, res) {
 
   try {
     const { mealText } = req.body;
-    
-    // 1. Get your API key from Vercel Environment Variables (We will set this up in Step 3C)
     const ZAI_API_KEY = process.env.ZAI_API_KEY;
 
-    // 2. The strict instruction we give to the AI so it returns perfect JSON data
+    // Check if Vercel actually loaded the API key
+    if (!ZAI_API_KEY) {
+      return res.status(500).json({ error: 'Missing ZAI_API_KEY in Vercel Environment Variables.' });
+    }
+
     const systemPrompt = `You are a professional nutritionist. Analyze the following meal description. Return ONLY a valid JSON object with the keys: calories (integer), protein (integer), fiber (integer), total_sugar (integer), added_sugar (integer), sodium (integer). Do not include any other text or markdown formatting. Meal: "${mealText}"`;
 
-    // 3. Call the Z.ai API (Using standard OpenAI-compatible format)
-    const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+    // Call the International Z.ai API Endpoint
+    const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${ZAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'glm-4', // or glm-4-flash if you want it faster/cheaper
+        model: 'glm-4-flash', // using flash model for speed and cost efficiency
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: mealText }
         ],
-        temperature: 0.1 // Low temperature means less creativity, more factual numbers
+        temperature: 0.1
       })
     });
 
     const data = await response.json();
+
+    // If Z.ai rejected the request, show us exactly why
+    if (!response.ok || !data.choices || !data.choices[0]) {
+      console.error("Z.ai API Error:", data);
+      return res.status(500).json({ error: `Z.ai API Error: ${data.error?.message || 'Unknown error'}` });
+    }
+
     const aiContent = data.choices[0].message.content;
 
-    // 4. Parse the JSON and send it back to your app
     try {
-      // Sometimes AIs wrap JSON in ```json blocks, so we strip those just in case
       const cleanJson = aiContent.replace(/```json/g, '').replace(/```/g, '').trim();
       const nutritionData = JSON.parse(cleanJson);
       res.status(200).json(nutritionData);
