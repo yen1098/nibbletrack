@@ -4,16 +4,33 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { mealText } = req.body;
+    const { mealText, imageBase64 } = req.body;
     const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
     if (!GROQ_API_KEY) {
       return res.status(500).json({ error: 'Missing GROQ_API_KEY in Vercel Environment Variables.' });
     }
 
-    const systemPrompt = `You are a professional nutritionist. Analyze the following meal description. Return ONLY a valid JSON object with the keys: calories (integer), protein (integer), fiber (integer), total_sugar (integer), added_sugar (integer), sodium (integer). Do not include any other text or markdown formatting. Meal: "${mealText}"`;
+    const systemPrompt = `You are a professional nutritionist. Estimate the nutritional values for the following meal. Assume standard RESTAURANT portions if the user does not specify exact measurements (e.g., if they say "fried egg", assume 2 large eggs). Be accurate and use USDA standard averages. Return ONLY a valid JSON object with the keys: calories, protein, fiber, total_sugar, added_sugar, sodium. The value for each key MUST be a string representing a range (e.g., "200-250"). Do not include any other text or markdown formatting.`;
 
-    // Call Groq API (Llama 3.1 8B model - incredibly fast and free!)
+    let model = 'llama-3.1-8b-instant';
+    let content = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: mealText }
+    ];
+
+    // If a photo is uploaded, switch to the Vision model and attach the image
+    if (imageBase64) {
+      model = 'llama-3.2-11b-vision-preview';
+      content = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: [
+          { type: 'text', text: mealText || "Analyze this food photo and estimate the macros." },
+          { type: 'image_url', image_url: { url: imageBase64 } }
+        ]}
+      ];
+    }
+
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -21,13 +38,10 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: mealText }
-        ],
+        model: model,
+        messages: content,
         temperature: 0.1,
-        response_format: { type: "json_object" } // Forces perfect JSON output
+        response_format: { type: "json_object" }
       })
     });
 
