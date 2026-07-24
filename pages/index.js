@@ -3,8 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import Head from 'next/head';
 
 // --- PASTE YOUR SUPABASE KEYS HERE ---
-const supabaseUrl = 'YOUR_SUPABASE_URL'; 
-const supabaseKey = 'YOUR_SUPABASE_ANON_KEY';
+const supabaseUrl = 'https://trlwqrejwtiypgkbciqu.supabase.co'; 
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRybHdxcmVqd3RpeXBna2JjaXF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4Mjk3NTgsImV4cCI6MjEwMDQwNTc1OH0.yAWg9aw9JtWpo-4SkbXpD-UlQ_0xCuJWrJTSJHPMG4o';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Helper function to parse ranges (e.g., "100-150" -> [100, 150])
