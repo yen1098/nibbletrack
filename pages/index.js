@@ -49,7 +49,6 @@ export default function Home() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   
-  // Modals & Editing
   const [mealToDelete, setMealToDelete] = useState(null);
   const [savedMealToDelete, setSavedMealToDelete] = useState(null);
   const [editingSavedMealId, setEditingSavedMealId] = useState(null);
@@ -209,7 +208,6 @@ export default function Home() {
     quickAddRef.current.focus();
   };
 
-  // Saved Meal Edit & Delete Logic
   const startEditSavedMeal = (m) => {
     setEditingSavedMealId(m.id);
     setEditingSavedMealName(m.name);
@@ -268,7 +266,6 @@ export default function Home() {
     
     setRecipes([...recipes, data]);
     
-    // Connect recipe to saved meals!
     if (!savedMeals.some(m => m.name === recipeName)) {
       const { data: savedMealData } = await supabase.from('saved_meals').insert([{ user_id: session.user.id, name: recipeName }]).select().single();
       if (savedMealData) setSavedMeals([...savedMeals, savedMealData]);
@@ -338,7 +335,6 @@ export default function Home() {
     return acc;
   }, { caloriesMin: 0, caloriesMax: 0, proteinMin: 0, proteinMax: 0, fiberMin: 0, fiberMax: 0, totalSugarMin: 0, totalSugarMax: 0, addedSugarMin: 0, addedSugarMax: 0, sodiumMin: 0, sodiumMax: 0 });
 
-  // New Minimalist Logo Component
   const Logo = ({ className }) => (
     <svg className={className} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="16" cy="16" r="14" fill="#f43f5e" />
@@ -347,7 +343,6 @@ export default function Home() {
     </svg>
   );
 
-  // --- LOGIN SCREEN ---
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-rose-50 p-4 font-sans">
@@ -372,7 +367,6 @@ export default function Home() {
     );
   }
 
-  // --- MAIN APP ---
   return (
     <div className="min-h-screen bg-rose-50 pb-24 font-sans" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
       <Head>
@@ -391,7 +385,6 @@ export default function Home() {
         <button onClick={handleLogout} className="text-xs text-rose-400 hover:underline">Log Out</button>
       </header>
 
-      {/* ================= TRACKER VIEW ================= */}
       {activeTab === 'tracker' && (
         <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
@@ -400,13 +393,21 @@ export default function Home() {
               <div className="mb-3 relative">
                 <label className="text-xs font-medium text-rose-400 uppercase tracking-wider mb-1 block">Quick Add / Saved Meals</label>
                 <div className="flex w-full">
-                  <input ref={quickAddRef} type="text" value={quickAddInput} onChange={(e) => { setQuickAddInput(e.target.value); setShowSuggestions(true); }} className="flex-1 min-w-0 p-2.5 border border-rose-200 rounded-l-xl text-base focus:ring-1 focus:ring-rose-500 focus:outline-none z-10 bg-rose-50/50 box-border" placeholder="Type to search or create..." />
+                  <input 
+                    ref={quickAddRef} 
+                    type="text" 
+                    value={quickAddInput} 
+                    onChange={(e) => { setQuickAddInput(e.target.value); setShowSuggestions(true); }} 
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)} 
+                    className="flex-1 min-w-0 p-2.5 border border-rose-200 rounded-l-xl text-base focus:ring-1 focus:ring-rose-500 focus:outline-none z-10 bg-rose-50/50 box-border" 
+                    placeholder="Type to search or create..." 
+                  />
                   <button onClick={saveQuickMeal} className="px-3 bg-rose-100 border border-l-0 border-rose-200 rounded-r-xl text-xs text-rose-600 font-medium hover:bg-rose-200 whitespace-nowrap transition box-border">+ Save text</button>
                 </div>
                 {showSuggestions && quickAddInput && savedMeals.filter(m => m.name.toLowerCase().includes(quickAddInput.toLowerCase())).length > 0 && (
                   <div className="absolute z-20 w-[calc(100%-3rem)] bg-white border border-rose-100 rounded-xl shadow-lg mt-1 max-h-40 overflow-y-auto">
                     {savedMeals.filter(m => m.name.toLowerCase().includes(quickAddInput.toLowerCase())).map(m => (
-                      <div key={m.id} onClick={() => selectSuggestion(m.name)} className="p-2 hover:bg-rose-50 cursor-pointer text-sm border-b border-rose-50 last:border-0">{m.name}</div>
+                      <div key={m.id} onMouseDown={() => selectSuggestion(m.name)} className="p-2 hover:bg-rose-50 cursor-pointer text-sm border-b border-rose-50 last:border-0">{m.name}</div>
                     ))}
                   </div>
                 )}
@@ -524,7 +525,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ================= RECIPES VIEW ================= */}
       {activeTab === 'recipes' && (
         <div className="max-w-4xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 h-fit overflow-hidden">
@@ -569,7 +569,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ================= SETTINGS VIEW ================= */}
       {activeTab === 'settings' && (
         <div className="max-w-2xl mx-auto px-4">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 mb-6 overflow-hidden">
@@ -610,7 +609,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Delete Logged Meal Modal */}
       {mealToDelete && (
         <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4" onClick={cancelDelete}>
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
@@ -624,7 +622,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Delete Saved Meal Modal */}
       {savedMealToDelete && (
         <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4" onClick={cancelDeleteSavedMeal}>
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
@@ -638,7 +635,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Full-Width Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-rose-100 flex" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <button onClick={() => setActiveTab('tracker')} className={`flex-1 py-3 font-medium ${activeTab === 'tracker' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Tracker</button>
         <button onClick={() => setActiveTab('recipes')} className={`flex-1 py-3 font-medium ${activeTab === 'recipes' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Recipes</button>
