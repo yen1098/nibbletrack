@@ -11,7 +11,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Missing GROQ_API_KEY in Vercel Environment Variables.' });
     }
 
-    // Updated prompt to force high added sugar estimates for processed meats
     const systemPrompt = `You are a professional nutritionist. Estimate the nutritional values for the following meal. Assume standard RESTAURANT portions if the user does not specify exact measurements (e.g., if they say "fried egg", assume 2 large eggs). Be accurate and use USDA standard averages. IMPORTANT: For processed meats (like ham, bacon, sausages, hotdogs), marinades, sauces, and baked goods, ALWAYS assume they contain added sugars and estimate the added_sugar on the HIGHER end (minimum 3-5g per serving). Return ONLY a valid JSON object with the keys: calories, protein, fiber, total_sugar, added_sugar, sodium. The value for each key MUST be a string representing a range (e.g., "200-250"). Do not include any other text or markdown formatting.`;
 
     let model = 'llama-3.3-70b-versatile';
@@ -20,8 +19,9 @@ export default async function handler(req, res) {
       { role: 'user', content: mealText }
     ];
 
+    // Updated to Llama 4 Scout for Vision
     if (imageBase64) {
-      model = 'llama-3.2-90b-vision-preview';
+      model = 'meta-llama/llama-4-scout-17b-16e-instruct';
       content = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: [
