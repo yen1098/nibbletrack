@@ -11,9 +11,9 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Missing GROQ_API_KEY in Vercel Environment Variables.' });
     }
 
-    const systemPrompt = `You are a professional nutritionist. Estimate the nutritional values for the following meal. Assume standard RESTAURANT portions if the user does not specify exact measurements (e.g., if they say "fried egg", assume 2 large eggs). Be accurate and use USDA standard averages. Return ONLY a valid JSON object with the keys: calories, protein, fiber, total_sugar, added_sugar, sodium. The value for each key MUST be a string representing a range (e.g., "200-250"). Do not include any other text or markdown formatting.`;
+    // Updated prompt to force high added sugar estimates for processed meats
+    const systemPrompt = `You are a professional nutritionist. Estimate the nutritional values for the following meal. Assume standard RESTAURANT portions if the user does not specify exact measurements (e.g., if they say "fried egg", assume 2 large eggs). Be accurate and use USDA standard averages. IMPORTANT: For processed meats (like ham, bacon, sausages, hotdogs), marinades, sauces, and baked goods, ALWAYS assume they contain added sugars and estimate the added_sugar on the HIGHER end (minimum 3-5g per serving). Return ONLY a valid JSON object with the keys: calories, protein, fiber, total_sugar, added_sugar, sodium. The value for each key MUST be a string representing a range (e.g., "200-250"). Do not include any other text or markdown formatting.`;
 
-    // Upgraded to 70B for text, 90B Vision for photos for ChatGPT-level accuracy
     let model = 'llama-3.3-70b-versatile';
     let content = [
       { role: 'system', content: systemPrompt },
