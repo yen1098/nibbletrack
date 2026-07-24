@@ -5,48 +5,43 @@ export default async function handler(req, res) {
 
   try {
     const { mealText } = req.body;
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-    if (!GEMINI_API_KEY) {
-      return res.status(500).json({ error: 'Missing GEMINI_API_KEY in Vercel Environment Variables.' });
+    if (!GROQ_API_KEY) {
+      return res.status(500).json({ error: 'Missing GROQ_API_KEY in Vercel Environment Variables.' });
     }
 
     const systemPrompt = `You are a professional nutritionist. Analyze the following meal description. Return ONLY a valid JSON object with the keys: calories (integer), protein (integer), fiber (integer), total_sugar (integer), added_sugar (integer), sodium (integer). Do not include any other text or markdown formatting. Meal: "${mealText}"`;
 
-    // Call Google Gemini API using the Header for authentication
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent`, {
+    // Call Groq API (Llama 3.1 8B model - incredibly fast and free!)
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': GEMINI_API_KEY // <-- Key is now safely in the headers!
+        'Authorization': `Bearer ${GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: systemPrompt }]
-        },
-        contents: [
-          { parts: [{ text: mealText }] }
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: mealText }
         ],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json"
-        }
+        temperature: 0.1,
+        response_format: { type: "json_object" } // Forces perfect JSON output
       })
     });
 
     const data = await response.json();
 
-    // If Gemini rejected the request, show us exactly why
-    if (!response.ok || !data.candidates || !data.candidates[0]) {
-      console.error("Gemini API Error:", data);
-      return res.status(500).json({ error: `Gemini API Error: ${data.error?.message || 'Unknown error'}` });
+    if (!response.ok || !data.choices || !data.choices[0]) {
+      console.error("Groq API Error:", data);
+      return res.status(500).json({ error: `Groq API Error: ${data.error?.message || 'Unknown error'}` });
     }
 
-    const aiContent = data.candidates[0].content.parts[0].text;
+    const aiContent = data.choices[0].message.content;
 
     try {
-      const cleanJson = aiContent.replace(/```json/g, '').replace(/```/g, '').trim();
-      const nutritionData = JSON.parse(cleanJson);
+      const nutritionData = JSON.parse(aiContent);
       res.status(200).json(nutritionData);
     } catch (parseError) {
       console.error("AI JSON Parse Error:", aiContent);
