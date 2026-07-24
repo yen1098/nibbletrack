@@ -21,7 +21,7 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${ZAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'glm-4',
+        model: 'glm-4-plus',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: mealText }
