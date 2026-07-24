@@ -13,11 +13,12 @@ export default async function handler(req, res) {
 
     const systemPrompt = `You are a professional nutritionist. Analyze the following meal description. Return ONLY a valid JSON object with the keys: calories (integer), protein (integer), fiber (integer), total_sugar (integer), added_sugar (integer), sodium (integer). Do not include any other text or markdown formatting. Meal: "${mealText}"`;
 
-    // Call Google Gemini API
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`, {
+    // Call Google Gemini API using the Header for authentication
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_API_KEY // <-- Key is now safely in the headers!
       },
       body: JSON.stringify({
         system_instruction: {
@@ -28,7 +29,7 @@ export default async function handler(req, res) {
         ],
         generationConfig: {
           temperature: 0.1,
-          responseMimeType: "application/json" // Forces Gemini to return perfect JSON
+          responseMimeType: "application/json"
         }
       })
     });
