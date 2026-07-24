@@ -13,15 +13,15 @@ export default async function handler(req, res) {
 
     const systemPrompt = `You are a professional nutritionist. Estimate the nutritional values for the following meal. Assume standard RESTAURANT portions if the user does not specify exact measurements (e.g., if they say "fried egg", assume 2 large eggs). Be accurate and use USDA standard averages. Return ONLY a valid JSON object with the keys: calories, protein, fiber, total_sugar, added_sugar, sodium. The value for each key MUST be a string representing a range (e.g., "200-250"). Do not include any other text or markdown formatting.`;
 
-    let model = 'llama-3.1-8b-instant';
+    // Upgraded to 70B for text, 90B Vision for photos for ChatGPT-level accuracy
+    let model = 'llama-3.3-70b-versatile';
     let content = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: mealText }
     ];
 
-    // If a photo is uploaded, switch to the Vision model and attach the image
     if (imageBase64) {
-      model = 'llama-3.2-11b-vision-preview';
+      model = 'llama-3.2-90b-vision-preview';
       content = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: [
