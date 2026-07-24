@@ -53,24 +53,19 @@ export default function Home() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [mealToDelete, setMealToDelete] = useState(null);
-  const [activeSwipeId, setActiveSwipeId] = useState(null);
 
-  const mealListRef = useRef(null);
+  const quickAddRef = useRef(null);
   const recognitionRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) {
-        fetchUserData(session.user.id);
-      }
+      if (session) fetchUserData(session.user.id);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) {
-        fetchUserData(session.user.id);
-      }
+      if (session) fetchUserData(session.user.id);
     });
 
     return () => subscription.unsubscribe();
@@ -94,7 +89,6 @@ export default function Home() {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const { data } = await supabase.from('meals').select('*').eq('user_id', userId).gte('created_at', sevenDaysAgo.toISOString());
-    
     if (data) {
       const grouped = {};
       for (let i = 6; i >= 0; i--) {
@@ -119,8 +113,8 @@ export default function Home() {
   };
 
   const fetchSavedMeals = async (userId) => {
-    const { data } = await supabase.from('saved_meals').select('*').eq('user_id', userId);
-    if (data) setSavedMeals(data.map(m => m.name));
+    const { data } = await supabase.from('saved_meals').select('id, name').eq('user_id', userId);
+    if (data) setSavedMeals(data);
   };
 
   const fetchRecipes = async (userId) => {
@@ -173,7 +167,6 @@ export default function Home() {
   const logMeal = async () => {
     if (!mealInput) return;
     setAiThinking(true);
-
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -181,19 +174,17 @@ export default function Home() {
         body: JSON.stringify({ mealText: mealInput.replace("[Photo attached]", "").trim(), imageBase64 })
       });
       const aiData = await response.json();
-
       if (aiData.error) throw new Error(aiData.error);
 
       const { data, error } = await supabase.from('meals').insert([
         { user_id: session.user.id, description: mealInput.replace("[Photo attached]", "").trim(), ...aiData }
       ]).select().single();
-
       if (error) throw error;
 
       setTodaysMeals([...todaysMeals, data]);
       setMealInput('');
       setImageBase64(null);
-      fetchHistory(session.user.id); // Update charts
+      fetchHistory(session.user.id);
     } catch (error) {
       alert("Error logging meal: " + error.message);
     } finally {
@@ -201,10 +192,8 @@ export default function Home() {
     }
   };
 
-  const requestDelete = (id) => {
-    setMealToDelete(id);
-    setActiveSwipeId(null);
-  };
+  const requestDelete = (id) => setMealToDelete(id);
+  const cancelDelete = () => setMealToDelete(null);
 
   const confirmDelete = async () => {
     await supabase.from('meals').delete().eq('id', mealToDelete);
@@ -214,26 +203,29 @@ export default function Home() {
   };
 
   const saveQuickMeal = async () => {
-    if (quickAddInput && !savedMeals.includes(quickAddInput)) {
-      await supabase.from('saved_meals').insert([{ user_id: session.user.id, name: quickAddInput }]);
-      setSavedMeals([...savedMeals, quickAddInput]);
+    if (quickAddInput && !savedMeals.some(m => m.name === quickAddInput)) {
+      const { data } = await supabase.from('saved_meals').insert([{ user_id: session.user.id, name: quickAddInput }]).select().single();
+      if (data) setSavedMeals([...savedMeals, data]);
       setQuickAddInput('');
     }
+    quickAddRef.current.focus();
+  };
+
+  const deleteSavedMeal = async (id) => {
+    await supabase.from('saved_meals').delete().eq('id', id);
+    setSavedMeals(savedMeals.filter(m => m.id !== id));
   };
 
   const selectSuggestion = (meal) => {
     setMealInput(prev => prev + (prev ? ", " : "") + meal);
     setQuickAddInput('');
     setShowSuggestions(false);
+    quickAddRef.current.focus();
   };
 
   const saveGoals = async () => {
     const { error } = await supabase.from('profiles').update({
-      calories_goal: settingCal,
-      protein_goal: settingPro,
-      fiber_goal: settingFib,
-      added_sugar_goal: settingAs,
-      sodium_goal: settingSod
+      calories_goal: settingCal, protein_goal: settingPro, fiber_goal: settingFib, added_sugar_goal: settingAs, sodium_goal: settingSod
     }).eq('id', session.user.id);
     if (error) alert(error.message);
     else { fetchGoals(session.user.id); alert("Goals saved!"); }
@@ -245,13 +237,8 @@ export default function Home() {
     setIngredientRows(updatedRows);
   };
 
-  const addIngredientRow = () => {
-    setIngredientRows([...ingredientRows, { qty: '', unit: '', name: '' }]);
-  };
-
-  const removeIngredientRow = (index) => {
-    setIngredientRows(ingredientRows.filter((_, i) => i !== index));
-  };
+  const addIngredientRow = () => setIngredientRows([...ingredientRows, { qty: '', unit: '', name: '' }]);
+  const removeIngredientRow = (index) => setIngredientRows(ingredientRows.filter((_, i) => i !== index));
 
   const saveRecipe = async () => {
     if (!recipeName) return alert("Please enter a recipe name.");
@@ -264,11 +251,9 @@ export default function Home() {
     const { data, error } = await supabase.from('recipes').insert([
       { user_id: session.user.id, name: recipeName, details }
     ]).select().single();
-
     if (error) return alert(error.message);
     
     setRecipes([...recipes, data]);
-    if (!savedMeals.includes(recipeName)) setSavedMeals([...savedMeals, recipeName]);
     setRecipeName('');
     setRecipeInstructions('');
     setIngredientRows([{ qty: '', unit: '', name: '' }]);
@@ -282,12 +267,8 @@ export default function Home() {
       recognition.lang = 'en-US';
       recognition.interimResults = false;
       recognitionRef.current = recognition;
-
       recognition.onstart = () => setIsRecording(true);
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setMealInput(prev => prev + (prev ? " " : "") + transcript);
-      };
+      recognition.onresult = (event) => setMealInput(prev => prev + (prev ? " " : "") + event.results[0][0].transcript);
       recognition.onerror = (event) => alert("Mic Error: " + event.error);
       recognition.onend = () => setIsRecording(false);
     }
@@ -301,8 +282,6 @@ export default function Home() {
 
   // Swipe to Delete Logic
   const handleTouchStart = (e, id) => {
-    if (!e.target.closest('.swipe-content')) return;
-    setActiveSwipeId(id);
     const item = e.currentTarget;
     item.dataset.startX = e.touches[0].clientX;
     item.dataset.startY = e.touches[0].clientY;
@@ -310,39 +289,28 @@ export default function Home() {
   };
 
   const handleTouchMove = (e) => {
-    if (!activeSwipeId) return;
     const item = e.currentTarget;
     if (!item.dataset.startX) return;
-    
     const deltaX = e.touches[0].clientX - parseFloat(item.dataset.startX);
     const deltaY = e.touches[0].clientY - parseFloat(item.dataset.startY);
-
     if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > 10) {
-      const translateX = Math.min(0, Math.max(deltaX, -80));
+      const translateX = Math.min(0, Math.max(deltaX, -120));
       item.style.transform = `translateX(${translateX}px)`;
+      if (deltaX < -15) item.style.boxShadow = '0 4px 6px -1px rgba(239, 68, 68, 0.2)';
     }
   };
 
   const handleTouchEnd = (e, id) => {
-    if (!activeSwipeId) return;
     const item = e.currentTarget;
-    item.style.transition = 'transform 0.3s ease';
+    item.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
     const deltaX = e.changedTouches[0].clientX - parseFloat(item.dataset.startX);
-    
-    if (deltaX < -60) {
-      requestDelete(id);
-    }
+    if (deltaX < -80) requestDelete(id);
     item.style.transform = 'translateX(0)';
-    setActiveSwipeId(null);
+    item.style.boxShadow = 'none';
   };
 
   const totals = todaysMeals.reduce((acc, meal) => {
-    const cal = parseRange(meal.calories);
-    const pro = parseRange(meal.protein);
-    const fib = parseRange(meal.fiber);
-    const ts = parseRange(meal.total_sugar);
-    const as = parseRange(meal.added_sugar);
-    const sod = parseRange(meal.sodium);
+    const cal = parseRange(meal.calories), pro = parseRange(meal.protein), fib = parseRange(meal.fiber), ts = parseRange(meal.total_sugar), as = parseRange(meal.added_sugar), sod = parseRange(meal.sodium);
     acc.caloriesMin += cal[0]; acc.caloriesMax += cal[1];
     acc.proteinMin += pro[0]; acc.proteinMax += pro[1];
     acc.fiberMin += fib[0]; acc.fiberMax += fib[1];
@@ -370,14 +338,15 @@ export default function Home() {
           <title>NibbleTrack</title>
           <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
           <script src="https://cdn.tailwindcss.com"></script>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
         </Head>
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-rose-100 max-w-md w-full">
           <div className="flex items-center justify-center gap-2 mb-6">
             <PawSvg className="h-8 w-8 text-rose-400" />
             <h1 className="text-3xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
           </div>
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 mb-3 border border-rose-200 rounded-xl bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-300" />
-          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-300" />
+          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 mb-3 border border-rose-200 rounded-xl bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-300 text-base" />
+          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-300 text-base" />
           <button onClick={handleLogin} className="w-full bg-rose-500 text-white py-3 rounded-xl mb-2 font-semibold hover:bg-rose-600 transition">Log In</button>
           <button onClick={handleSignUp} className="w-full bg-white text-rose-500 border border-rose-200 py-3 rounded-xl font-semibold hover:bg-rose-50 transition">Sign Up</button>
         </div>
@@ -412,20 +381,20 @@ export default function Home() {
               <div className="mb-3 relative">
                 <label className="text-xs font-medium text-rose-400 uppercase tracking-wider mb-1 block">Quick Add / Saved Meals</label>
                 <div className="flex w-full">
-                  <input type="text" value={quickAddInput} onChange={(e) => { setQuickAddInput(e.target.value); setShowSuggestions(true); }} className="flex-1 min-w-0 p-2.5 border border-rose-200 rounded-l-xl text-sm focus:ring-1 focus:ring-rose-500 focus:outline-none z-10 bg-rose-50/50 box-border" placeholder="Type to search or create..." />
+                  <input ref={quickAddRef} type="text" value={quickAddInput} onChange={(e) => { setQuickAddInput(e.target.value); setShowSuggestions(true); }} className="flex-1 min-w-0 p-2.5 border border-rose-200 rounded-l-xl text-base focus:ring-1 focus:ring-rose-500 focus:outline-none z-10 bg-rose-50/50 box-border" placeholder="Type to search or create..." />
                   <button onClick={saveQuickMeal} className="px-3 bg-rose-100 border border-l-0 border-rose-200 rounded-r-xl text-xs text-rose-600 font-medium hover:bg-rose-200 whitespace-nowrap transition box-border">+ Save text</button>
                 </div>
-                {showSuggestions && quickAddInput && savedMeals.filter(m => m.toLowerCase().includes(quickAddInput.toLowerCase())).length > 0 && (
+                {showSuggestions && quickAddInput && savedMeals.filter(m => m.name.toLowerCase().includes(quickAddInput.toLowerCase())).length > 0 && (
                   <div className="absolute z-20 w-[calc(100%-3rem)] bg-white border border-rose-100 rounded-xl shadow-lg mt-1 max-h-40 overflow-y-auto">
-                    {savedMeals.filter(m => m.toLowerCase().includes(quickAddInput.toLowerCase())).map(m => (
-                      <div key={m} onClick={() => selectSuggestion(m)} className="p-2 hover:bg-rose-50 cursor-pointer text-sm border-b border-rose-50 last:border-0">{m}</div>
+                    {savedMeals.filter(m => m.name.toLowerCase().includes(quickAddInput.toLowerCase())).map(m => (
+                      <div key={m.id} onClick={() => selectSuggestion(m.name)} className="p-2 hover:bg-rose-50 cursor-pointer text-sm border-b border-rose-50 last:border-0">{m.name}</div>
                     ))}
                   </div>
                 )}
               </div>
               
               <div className="relative w-full">
-                <textarea value={mealInput} onChange={(e) => setMealInput(e.target.value)} className="w-full p-3 pr-24 border border-rose-200 rounded-xl text-sm focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" rows="3" placeholder="Type, speak, or photograph your meal..."></textarea>
+                <textarea value={mealInput} onChange={(e) => setMealInput(e.target.value)} className="w-full p-3 pr-24 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" rows="3" placeholder="Type, speak, or photograph your meal..."></textarea>
                 <div className="absolute right-3 bottom-3 flex gap-2">
                   <button onClick={toggleMic} className={`p-2 rounded-lg transition ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-rose-100 text-rose-500 hover:bg-rose-200'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" /></svg>
@@ -447,18 +416,14 @@ export default function Home() {
               <div className="space-y-3">
                 {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><PawSvg className="h-5 w-5" /> No meals logged yet.</div>}
                 {todaysMeals.map(meal => (
-                  <div key={meal.id} className="relative overflow-hidden rounded-xl bg-red-100" ref={mealListRef}>
-                    <div className="swipe-content bg-white p-3 flex justify-between items-start border border-rose-100 rounded-xl" 
-                         onTouchStart={(e) => handleTouchStart(e, meal.id)} 
-                         onTouchMove={handleTouchMove} 
-                         onTouchEnd={(e) => handleTouchEnd(e, meal.id)}>
+                  <div key={meal.id} className="relative overflow-hidden rounded-xl" style={{ backgroundColor: '#fee2e2' }}>
+                    <div className="swipe-content bg-white p-3 flex justify-between items-start border border-rose-100 rounded-xl" style={{ touchAction: 'pan-y' }} onTouchStart={(e) => handleTouchStart(e, meal.id)} onTouchMove={handleTouchMove} onTouchEnd={(e) => handleTouchEnd(e, meal.id)}>
                       <div className="mr-2 pointer-events-none">
                         <p className="font-medium capitalize text-gray-700">{meal.description}</p>
                         <p className="text-xs text-rose-400 mt-1">P: {meal.protein}g | Fib: {meal.fiber}g | Sod: {meal.sodium}mg</p>
                       </div>
                       <div className="font-bold text-rose-500 whitespace-nowrap pointer-events-none">{meal.calories} kcal</div>
                     </div>
-                    <button onClick={() => requestDelete(meal.id)} className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 text-white text-xs font-medium flex items-center justify-center">Delete</button>
                   </div>
                 ))}
               </div>
@@ -470,39 +435,28 @@ export default function Home() {
               <h2 className="text-xl font-semibold mb-4 text-gray-700">Today's Metrics</h2>
               <div className="space-y-4">
                 <div>
-                  <div className="flex justify-between text-sm font-medium mb-1">
-                    <span className="text-gray-600">Calories</span>
-                    <span className="text-gray-800">{totals.caloriesMin}-{totals.caloriesMax} / {goals.calories_goal} kcal</span>
-                  </div>
+                  <div className="flex justify-between text-sm font-medium mb-1"><span className="text-gray-600">Calories</span><span className="text-gray-800">{totals.caloriesMin}-{totals.caloriesMax} / {goals.calories_goal} kcal</span></div>
                   <div className="w-full bg-rose-100 rounded-full h-2.5"><div className="bg-rose-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (totals.caloriesMax / goals.calories_goal) * 100)}%` }}></div></div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-sm font-medium mb-1">
-                    <span className="text-gray-600">Protein</span>
-                    <span className="text-gray-800">{totals.proteinMin}-{totals.proteinMax} / {goals.protein_goal} g</span>
-                  </div>
+                  <div className="flex justify-between text-sm font-medium mb-1"><span className="text-gray-600">Protein</span><span className="text-gray-800">{totals.proteinMin}-{totals.proteinMax} / {goals.protein_goal} g</span></div>
                   <div className="w-full bg-green-100 rounded-full h-2.5"><div className="bg-green-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (totals.proteinMax / goals.protein_goal) * 100)}%` }}></div></div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-sm font-medium mb-1">
-                    <span className="text-gray-600">Fiber</span>
-                    <span className="text-gray-800">{totals.fiberMin}-{totals.fiberMax} / {goals.fiber_goal} g</span>
-                  </div>
+                  <div className="flex justify-between text-sm font-medium mb-1"><span className="text-gray-600">Fiber</span><span className="text-gray-800">{totals.fiberMin}-{totals.fiberMax} / {goals.fiber_goal} g</span></div>
                   <div className="w-full bg-blue-100 rounded-full h-2.5"><div className="bg-blue-400 h-2.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (totals.fiberMax / goals.fiber_goal) * 100)}%` }}></div></div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-sm font-medium mb-1">
-                    <span className="text-gray-600">Sodium</span>
-                    <span className="text-gray-800">{totals.sodiumMin}-{totals.sodiumMax} / ≤ {goals.sodium_goal} mg</span>
-                  </div>
+                  <div className="flex justify-between text-sm font-medium mb-1"><span className="text-gray-600">Sodium</span><span className="text-gray-800">{totals.sodiumMin}-{totals.sodiumMax} / ≤ {goals.sodium_goal} mg</span></div>
                   <div className="w-full bg-purple-100 rounded-full h-2.5"><div className="bg-purple-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (totals.sodiumMax / goals.sodium_goal) * 100)}%` }}></div></div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-sm font-medium mb-1">
-                    <span className="text-gray-600">Added Sugar</span>
-                    <span className="text-gray-800">{totals.addedSugarMin}-{totals.addedSugarMax} / ≤ {goals.added_sugar_goal} g</span>
-                  </div>
+                  <div className="flex justify-between text-sm font-medium mb-1"><span className="text-gray-600">Added Sugar</span><span className="text-gray-800">{totals.addedSugarMin}-{totals.addedSugarMax} / ≤ {goals.added_sugar_goal} g</span></div>
                   <div className="w-full bg-yellow-100 rounded-full h-2.5"><div className="bg-yellow-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (totals.addedSugarMax / goals.added_sugar_goal) * 100)}%` }}></div></div>
+                </div>
+                <div className="flex justify-between text-sm font-medium pt-2 border-t border-rose-50 mt-2">
+                  <span className="text-gray-600">Total Sugar</span>
+                  <span className="text-gray-800">{totals.totalSugarMin}-{totals.totalSugarMax} g <span className="text-gray-400 ml-1">(No limit)</span></span>
                 </div>
               </div>
             </div>
@@ -512,8 +466,8 @@ export default function Home() {
                 <h2 className="text-xl font-semibold text-gray-700">History (7 Days)</h2>
                 <span className="text-xs text-rose-400 font-medium">Scroll for charts &rarr;</span>
               </div>
-              <div className="carousel-container flex overflow-x-auto custom-scroll pb-4" style={{ scrollSnapType: 'x mandatory' }}>
-                <div className="carousel-slide pr-3" style={{ scrollSnapAlign: 'start', flex: '0 0 100%', width: '100%' }}>
+              <div className="flex overflow-x-auto custom-scroll pb-4" style={{ scrollSnapType: 'x mandatory' }}>
+                <div className="pr-3" style={{ scrollSnapAlign: 'start', flex: '0 0 100%', width: '100%' }}>
                   <div className="space-y-2 max-h-[220px] overflow-y-auto custom-scroll pr-2">
                     {historyData.slice().reverse().map((day, index) => (
                       <details key={index} className="bg-white rounded-xl border border-rose-100">
@@ -532,7 +486,6 @@ export default function Home() {
                     ))}
                   </div>
                 </div>
-                {/* Charts */}
                 {[
                   { title: 'Calories', key: 'calories', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.1)' },
                   { title: 'Protein', key: 'protein', color: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)' },
@@ -541,7 +494,7 @@ export default function Home() {
                   { title: 'Added Sugar', key: 'added_sugar', color: '#f97316', bg: 'rgba(249, 115, 22, 0.1)' },
                   { title: 'Total Sugar', key: 'total_sugar', color: '#ec4899', bg: 'rgba(236, 72, 153, 0.1)' }
                 ].map(chart => (
-                  <div key={chart.key} className="carousel-slide pr-3" style={{ scrollSnapAlign: 'start', flex: '0 0 100%', width: '100%' }}>
+                  <div key={chart.key} className="pr-3" style={{ scrollSnapAlign: 'start', flex: '0 0 100%', width: '100%' }}>
                     <h3 className="text-sm font-semibold text-rose-400 mb-2">{chart.title} Trend</h3>
                     <div className="h-[220px]"><HistoryChart data={historyData} dataKey={chart.key} color={chart.color} bg={chart.bg} /></div>
                   </div>
@@ -557,13 +510,13 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 h-fit overflow-hidden">
             <h2 className="text-xl font-semibold mb-4 text-gray-700">Add Healthy Recipe</h2>
-            <input type="text" value={recipeName} onChange={(e) => setRecipeName(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" placeholder="Recipe Name (e.g., Quinoa Salad)" />
+            <input type="text" value={recipeName} onChange={(e) => setRecipeName(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" placeholder="Recipe Name (e.g., Quinoa Salad)" />
             <label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-3">Ingredients</label>
             <div className="space-y-3 mb-3">
               {ingredientRows.map((row, index) => (
                 <div key={index} className="flex gap-2 items-center min-w-0">
-                  <input type="text" value={row.qty} onChange={(e) => handleRecipeChange(index, 'qty', e.target.value)} className="w-16 min-w-0 p-2.5 text-center bg-rose-50 border border-rose-200 rounded-lg text-sm focus:outline-none box-border" placeholder="Qty" />
-                  <select value={row.unit} onChange={(e) => handleRecipeChange(index, 'unit', e.target.value)} className="w-24 min-w-0 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-sm focus:outline-none box-border">
+                  <input type="text" value={row.qty} onChange={(e) => handleRecipeChange(index, 'qty', e.target.value)} className="w-16 min-w-0 p-2.5 text-center bg-rose-50 border border-rose-200 rounded-lg text-base focus:outline-none box-border" placeholder="Qty" />
+                  <select value={row.unit} onChange={(e) => handleRecipeChange(index, 'unit', e.target.value)} className="w-24 min-w-0 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-base focus:outline-none box-border">
                     <option value="">Unit</option>
                     <option value="cup">cup</option>
                     <option value="tbsp">tbsp</option>
@@ -572,14 +525,14 @@ export default function Home() {
                     <option value="g">g</option>
                     <option value="ml">ml</option>
                   </select>
-                  <input type="text" value={row.name} onChange={(e) => handleRecipeChange(index, 'name', e.target.value)} className="flex-1 min-w-0 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-sm focus:outline-none box-border" placeholder="Ingredient" />
+                  <input type="text" value={row.name} onChange={(e) => handleRecipeChange(index, 'name', e.target.value)} className="flex-1 min-w-0 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-base focus:outline-none box-border" placeholder="Ingredient" />
                   <button onClick={() => removeIngredientRow(index)} className="p-2 text-rose-300 hover:text-rose-500 hover:bg-rose-100 rounded-lg transition flex items-center justify-center w-10 h-10 flex-shrink-0">✕</button>
                 </div>
               ))}
             </div>
             <button onClick={addIngredientRow} className="w-full p-2.5 border border-dashed border-rose-300 rounded-xl text-sm text-rose-500 font-medium hover:bg-rose-50 transition flex items-center justify-center gap-1 mb-6 box-border">+ Add Ingredient</button>
             <label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-2">Instructions</label>
-            <textarea value={recipeInstructions} onChange={(e) => setRecipeInstructions(e.target.value)} className="w-full p-3 border border-rose-200 rounded-xl mb-4 focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" rows="4" placeholder="Steps to prepare..."></textarea>
+            <textarea value={recipeInstructions} onChange={(e) => setRecipeInstructions(e.target.value)} className="w-full p-3 border border-rose-200 rounded-xl mb-4 focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" rows="4" placeholder="Steps to prepare..."></textarea>
             <button onClick={saveRecipe} className="w-full bg-green-500 text-white font-semibold py-3 rounded-xl hover:bg-green-600 transition shadow-sm shadow-green-200 box-border">Save Recipe</button>
           </div>
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
@@ -603,25 +556,38 @@ export default function Home() {
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 mb-6 overflow-hidden">
             <h2 className="text-xl font-semibold mb-6 text-gray-700">Daily Goals</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Calories (kcal)</label><input type="number" value={settingCal} onChange={(e) => setSettingCal(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-sm focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
-              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Protein (g)</label><input type="number" value={settingPro} onChange={(e) => setSettingPro(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-sm focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
-              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Fiber (g)</label><input type="number" value={settingFib} onChange={(e) => setSettingFib(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-sm focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
-              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Added Sugar (g)</label><input type="number" value={settingAs} onChange={(e) => setSettingAs(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-sm focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
-              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Sodium (mg)</label><input type="number" value={settingSod} onChange={(e) => setSettingSod(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-sm focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
+              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Calories (kcal)</label><input type="number" value={settingCal} onChange={(e) => setSettingCal(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
+              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Protein (g)</label><input type="number" value={settingPro} onChange={(e) => setSettingPro(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
+              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Fiber (g)</label><input type="number" value={settingFib} onChange={(e) => setSettingFib(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
+              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Added Sugar (g)</label><input type="number" value={settingAs} onChange={(e) => setSettingAs(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
+              <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Sodium (mg)</label><input type="number" value={settingSod} onChange={(e) => setSettingSod(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
             </div>
             <button onClick={saveGoals} className="mt-6 w-full bg-rose-500 text-white font-semibold py-3 rounded-xl hover:bg-rose-600 transition shadow-sm shadow-rose-200 box-border">Save Goals</button>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
+            <h2 className="text-xl font-semibold mb-4 text-gray-700">Manage Saved Meals</h2>
+            <div className="space-y-2">
+              {savedMeals.length === 0 && <p className="text-rose-300 text-sm text-center py-4">No saved meals yet.</p>}
+              {savedMeals.map(m => (
+                <div key={m.id} className="flex justify-between items-center p-3 bg-rose-50/40 border border-rose-100 rounded-xl">
+                  <span className="text-sm text-gray-700 capitalize">{m.name}</span>
+                  <button onClick={() => deleteSavedMeal(m.id)} className="text-xs text-rose-400 hover:text-red-500 font-medium">Delete</button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {/* Delete Confirmation Modal */}
       {mealToDelete && (
-        <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4" onClick={() => setMealToDelete(null)}>
+        <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4" onClick={cancelDelete}>
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Delete Meal?</h3>
             <p className="text-sm text-gray-500 mb-6">Are you sure you want to delete this meal? This action cannot be undone.</p>
             <div className="flex gap-3">
-              <button onClick={() => setMealToDelete(null)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={cancelDelete} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition">Cancel</button>
               <button onClick={confirmDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition">Delete</button>
             </div>
           </div>
@@ -629,7 +595,7 @@ export default function Home() {
       )}
 
       {/* Floating Bottom Navigation Overlay */}
-      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white shadow-lg shadow-rose-100 border border-rose-100 rounded-2xl p-2 flex gap-2 w-[95%] max-w-md" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
+      <nav className="fixed left-1/2 -translate-x-1/2 z-50 bg-white shadow-lg shadow-rose-100 border border-rose-100 rounded-2xl p-2 flex gap-2 w-[95%] max-w-md" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
         <button onClick={() => setActiveTab('tracker')} className={`flex-1 py-2 rounded-xl font-medium ${activeTab === 'tracker' ? 'bg-rose-50 text-rose-600' : 'text-gray-400'}`}>Tracker</button>
         <button onClick={() => setActiveTab('recipes')} className={`flex-1 py-2 rounded-xl font-medium ${activeTab === 'recipes' ? 'bg-rose-50 text-rose-600' : 'text-gray-400'}`}>Recipes</button>
         <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2 rounded-xl font-medium ${activeTab === 'settings' ? 'bg-rose-50 text-rose-600' : 'text-gray-400'}`}>Settings</button>
@@ -641,32 +607,18 @@ export default function Home() {
 // Chart Component
 function HistoryChart({ data, dataKey, color, bg }) {
   const chartRef = useRef(null);
-
   useEffect(() => {
     if (chartRef.current) {
       const chart = new Chart(chartRef.current, {
         type: 'line',
         data: {
           labels: data.map(d => d.date),
-          datasets: [{
-            data: data.map(d => d[dataKey]),
-            borderColor: color,
-            backgroundColor: bg,
-            fill: true,
-            borderWidth: 2
-          }]
+          datasets: [{ data: data.map(d => d[dataKey]), borderColor: color, backgroundColor: bg, fill: true, borderWidth: 2 }]
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          elements: { line: { tension: 0.4 } },
-          scales: { y: { beginAtZero: true } }
-        }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, elements: { line: { tension: 0.4 } }, scales: { y: { beginAtZero: true } } }
       });
       return () => chart.destroy();
     }
   }, [data, dataKey, color, bg]);
-
   return <canvas ref={chartRef}></canvas>;
 }
