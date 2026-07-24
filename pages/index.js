@@ -9,7 +9,6 @@ const supabaseUrl = 'https://trlwqrejwtiypgkbciqu.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRybHdxcmVqd3RpeXBna2JjaXF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4Mjk3NTgsImV4cCI6MjEwMDQwNTc1OH0.yAWg9aw9JtWpo-4SkbXpD-UlQ_0xCuJWrJTSJHPMG4o';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Helper function to parse ranges (e.g., "100-150" -> [100, 150])
 const parseRange = (str) => {
   if (!str || typeof str !== 'string') return [0, 0];
   const cleanStr = str.replace(/,/g, '');
@@ -36,23 +35,25 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
-  // Settings State
   const [settingCal, setSettingCal] = useState(1200);
   const [settingPro, setSettingPro] = useState(90);
   const [settingFib, setSettingFib] = useState(30);
   const [settingAs, setSettingAs] = useState(25);
   const [settingSod, setSettingSod] = useState(2000);
 
-  // Recipe State
   const [recipeName, setRecipeName] = useState('');
   const [recipeInstructions, setRecipeInstructions] = useState('');
   const [ingredientRows, setIngredientRows] = useState([{ qty: '', unit: '', name: '' }]);
 
-  // UI State
   const [quickAddInput, setQuickAddInput] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  
+  // Modals & Editing
   const [mealToDelete, setMealToDelete] = useState(null);
+  const [savedMealToDelete, setSavedMealToDelete] = useState(null);
+  const [editingSavedMealId, setEditingSavedMealId] = useState(null);
+  const [editingSavedMealName, setEditingSavedMealName] = useState('');
 
   const quickAddRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -62,12 +63,10 @@ export default function Home() {
       setSession(session);
       if (session) fetchUserData(session.user.id);
     });
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) fetchUserData(session.user.id);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
@@ -194,7 +193,6 @@ export default function Home() {
 
   const requestDelete = (id) => setMealToDelete(id);
   const cancelDelete = () => setMealToDelete(null);
-
   const confirmDelete = async () => {
     await supabase.from('meals').delete().eq('id', mealToDelete);
     setTodaysMeals(todaysMeals.filter(m => m.id !== mealToDelete));
@@ -211,9 +209,24 @@ export default function Home() {
     quickAddRef.current.focus();
   };
 
-  const deleteSavedMeal = async (id) => {
-    await supabase.from('saved_meals').delete().eq('id', id);
-    setSavedMeals(savedMeals.filter(m => m.id !== id));
+  // Saved Meal Edit & Delete Logic
+  const startEditSavedMeal = (m) => {
+    setEditingSavedMealId(m.id);
+    setEditingSavedMealName(m.name);
+  };
+
+  const saveEditedSavedMeal = async (id) => {
+    const { data, error } = await supabase.from('saved_meals').update({ name: editingSavedMealName }).eq('id', id).select().single();
+    if (data) setSavedMeals(savedMeals.map(m => m.id === id ? data : m));
+    setEditingSavedMealId(null);
+  };
+
+  const requestDeleteSavedMeal = (id) => setSavedMealToDelete(id);
+  const cancelDeleteSavedMeal = () => setSavedMealToDelete(null);
+  const confirmDeleteSavedMeal = async () => {
+    await supabase.from('saved_meals').delete().eq('id', savedMealToDelete);
+    setSavedMeals(savedMeals.filter(m => m.id !== savedMealToDelete));
+    setSavedMealToDelete(null);
   };
 
   const selectSuggestion = (meal) => {
@@ -254,12 +267,18 @@ export default function Home() {
     if (error) return alert(error.message);
     
     setRecipes([...recipes, data]);
+    
+    // Connect recipe to saved meals!
+    if (!savedMeals.some(m => m.name === recipeName)) {
+      const { data: savedMealData } = await supabase.from('saved_meals').insert([{ user_id: session.user.id, name: recipeName }]).select().single();
+      if (savedMealData) setSavedMeals([...savedMeals, savedMealData]);
+    }
+
     setRecipeName('');
     setRecipeInstructions('');
     setIngredientRows([{ qty: '', unit: '', name: '' }]);
   };
 
-  // Voice Input Logic
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -280,7 +299,6 @@ export default function Home() {
     else recognitionRef.current.start();
   };
 
-  // Swipe to Delete Logic
   const handleTouchStart = (e, id) => {
     const item = e.currentTarget;
     item.dataset.startX = e.touches[0].clientX;
@@ -320,13 +338,12 @@ export default function Home() {
     return acc;
   }, { caloriesMin: 0, caloriesMax: 0, proteinMin: 0, proteinMax: 0, fiberMin: 0, fiberMax: 0, totalSugarMin: 0, totalSugarMax: 0, addedSugarMin: 0, addedSugarMax: 0, sodiumMin: 0, sodiumMax: 0 });
 
-  const PawSvg = ({ className }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 14c-3.3 0-6 2.4-6 5.2 0 1.5.8 2.3 1.9 2.3.8 0 1.4-.2 2-.4.6-.2 1.2-.3 2.1-.3s1.5.1 2.1.3c.6.2 1.2.4 2 .4 1.1 0 1.9-.8 1.9-2.3 0-2.8-2.7-5.2-6-5.2z"/>
-      <ellipse cx="5.5" cy="11" rx="1.8" ry="2.2"/>
-      <ellipse cx="9.8" cy="8.5" rx="1.8" ry="2.4"/>
-      <ellipse cx="14.2" cy="8.5" rx="1.8" ry="2.4"/>
-      <ellipse cx="18.5" cy="11" rx="1.8" ry="2.2"/>
+  // New Minimalist Logo Component
+  const Logo = ({ className }) => (
+    <svg className={className} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="16" r="14" fill="#f43f5e" />
+      <path d="M12 10V13M12 13V22M12 13C11 13 10.5 12 10.5 10.5M12 13C13 13 13.5 12 13.5 10.5M12 10C11.5 10 11 9.5 11 9M12 10C12.5 10 13 9.5 13 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M20 9C18.5 9 17 10.5 17 12.5C17 14 18 15 20 15C22 15 23 14 23 12.5C23 10.5 21.5 9 20 9Z M20 15V22" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 
@@ -339,10 +356,11 @@ export default function Home() {
           <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
           <script src="https://cdn.tailwindcss.com"></script>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+          <style>{`html, body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }`}</style>
         </Head>
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-rose-100 max-w-md w-full">
           <div className="flex items-center justify-center gap-2 mb-6">
-            <PawSvg className="h-8 w-8 text-rose-400" />
+            <Logo className="h-8 w-8" />
             <h1 className="text-3xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
           </div>
           <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 mb-3 border border-rose-200 rounded-xl bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-300 text-base" />
@@ -356,17 +374,18 @@ export default function Home() {
 
   // --- MAIN APP ---
   return (
-    <div className="min-h-screen bg-rose-50 pb-24 font-sans" style={{ paddingBottom: 'calc(100px + env(safe-area-inset-bottom))' }}>
+    <div className="min-h-screen bg-rose-50 pb-24 font-sans" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
       <Head>
         <title>NibbleTrack</title>
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+        <style>{`html, body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }`}</style>
       </Head>
 
       <header className="max-w-6xl mx-auto p-4 sm:p-6 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <PawSvg className="h-6 w-6 text-rose-400" />
+          <Logo className="h-7 w-7" />
           <h1 className="text-2xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
         </div>
         <button onClick={handleLogout} className="text-xs text-rose-400 hover:underline">Log Out</button>
@@ -414,10 +433,10 @@ export default function Home() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100">
               <h2 className="text-xl font-semibold mb-4 text-gray-700">Today's Log</h2>
               <div className="space-y-3">
-                {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><PawSvg className="h-5 w-5" /> No meals logged yet.</div>}
+                {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No meals logged yet.</div>}
                 {todaysMeals.map(meal => (
                   <div key={meal.id} className="relative overflow-hidden rounded-xl" style={{ backgroundColor: '#fee2e2' }}>
-                    <div className="swipe-content bg-white p-3 flex justify-between items-start border border-rose-100 rounded-xl" style={{ touchAction: 'pan-y' }} onTouchStart={(e) => handleTouchStart(e, meal.id)} onTouchMove={handleTouchMove} onTouchEnd={(e) => handleTouchEnd(e, meal.id)}>
+                    <div className="bg-white p-3 flex justify-between items-start border border-rose-100 rounded-xl" style={{ touchAction: 'pan-y' }} onTouchStart={(e) => handleTouchStart(e, meal.id)} onTouchMove={handleTouchMove} onTouchEnd={(e) => handleTouchEnd(e, meal.id)}>
                       <div className="mr-2 pointer-events-none">
                         <p className="font-medium capitalize text-gray-700">{meal.description}</p>
                         <p className="text-xs text-rose-400 mt-1">P: {meal.protein}g | Fib: {meal.fiber}g | Sod: {meal.sodium}mg</p>
@@ -538,7 +557,7 @@ export default function Home() {
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
             <h2 className="text-xl font-semibold mb-4 text-gray-700">My Recipes</h2>
             <div className="space-y-3">
-              {recipes.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><PawSvg className="h-5 w-5" /> No recipes saved yet.</div>}
+              {recipes.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No recipes saved yet.</div>}
               {recipes.map(r => (
                 <div key={r.id} className="p-4 border border-rose-100 rounded-xl bg-white">
                   <h3 className="font-semibold text-gray-800">{r.name}</h3>
@@ -571,8 +590,19 @@ export default function Home() {
               {savedMeals.length === 0 && <p className="text-rose-300 text-sm text-center py-4">No saved meals yet.</p>}
               {savedMeals.map(m => (
                 <div key={m.id} className="flex justify-between items-center p-3 bg-rose-50/40 border border-rose-100 rounded-xl">
-                  <span className="text-sm text-gray-700 capitalize">{m.name}</span>
-                  <button onClick={() => deleteSavedMeal(m.id)} className="text-xs text-rose-400 hover:text-red-500 font-medium">Delete</button>
+                  {editingSavedMealId === m.id ? (
+                    <input type="text" value={editingSavedMealName} onChange={(e) => setEditingSavedMealName(e.target.value)} className="flex-1 min-w-0 p-2 border border-rose-200 rounded-lg text-base focus:outline-none" />
+                  ) : (
+                    <span className="text-sm text-gray-700 capitalize">{m.name}</span>
+                  )}
+                  <div className="flex gap-2 ml-2 flex-shrink-0">
+                    {editingSavedMealId === m.id ? (
+                      <button onClick={() => saveEditedSavedMeal(m.id)} className="text-xs text-green-600 hover:underline font-medium">Save</button>
+                    ) : (
+                      <button onClick={() => startEditSavedMeal(m)} className="text-xs text-rose-400 hover:text-rose-600 font-medium">Edit</button>
+                    )}
+                    <button onClick={() => requestDeleteSavedMeal(m.id)} className="text-xs text-rose-400 hover:text-red-500 font-medium">Delete</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -580,7 +610,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Logged Meal Modal */}
       {mealToDelete && (
         <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4" onClick={cancelDelete}>
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
@@ -594,17 +624,30 @@ export default function Home() {
         </div>
       )}
 
-      {/* Floating Bottom Navigation Overlay */}
-      <nav className="fixed left-1/2 -translate-x-1/2 z-50 bg-white shadow-lg shadow-rose-100 border border-rose-100 rounded-2xl p-2 flex gap-2 w-[95%] max-w-md" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
-        <button onClick={() => setActiveTab('tracker')} className={`flex-1 py-2 rounded-xl font-medium ${activeTab === 'tracker' ? 'bg-rose-50 text-rose-600' : 'text-gray-400'}`}>Tracker</button>
-        <button onClick={() => setActiveTab('recipes')} className={`flex-1 py-2 rounded-xl font-medium ${activeTab === 'recipes' ? 'bg-rose-50 text-rose-600' : 'text-gray-400'}`}>Recipes</button>
-        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2 rounded-xl font-medium ${activeTab === 'settings' ? 'bg-rose-50 text-rose-600' : 'text-gray-400'}`}>Settings</button>
+      {/* Delete Saved Meal Modal */}
+      {savedMealToDelete && (
+        <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4" onClick={cancelDeleteSavedMeal}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Delete Saved Meal?</h3>
+            <p className="text-sm text-gray-500 mb-6">Are you sure you want to delete this from your saved meals?</p>
+            <div className="flex gap-3">
+              <button onClick={cancelDeleteSavedMeal} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={confirmDeleteSavedMeal} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-Width Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-rose-100 flex" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <button onClick={() => setActiveTab('tracker')} className={`flex-1 py-3 font-medium ${activeTab === 'tracker' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Tracker</button>
+        <button onClick={() => setActiveTab('recipes')} className={`flex-1 py-3 font-medium ${activeTab === 'recipes' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Recipes</button>
+        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 font-medium ${activeTab === 'settings' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Settings</button>
       </nav>
     </div>
   );
 }
 
-// Chart Component
 function HistoryChart({ data, dataKey, color, bg }) {
   const chartRef = useRef(null);
   useEffect(() => {
