@@ -19,9 +19,9 @@ export default async function handler(req, res) {
       { role: 'user', content: mealText }
     ];
 
-    // Updated to Llama 4 Scout for Vision
+    // Using the stable, free-tier Llama 3.2 11B Vision model
     if (imageBase64) {
-      model = 'meta-llama/llama-4-scout-17b-16e-instruct';
+      model = 'llama-3.2-11b-vision-preview';
       content = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: [
