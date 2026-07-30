@@ -365,21 +365,24 @@ export default function Home() {
     return acc;
   }, { caloriesMin: 0, caloriesMax: 0, proteinMin: 0, proteinMax: 0, fiberMin: 0, fiberMax: 0, totalSugarMin: 0, totalSugarMax: 0, addedSugarMin: 0, addedSugarMax: 0, sodiumMin: 0, sodiumMax: 0 });
 
+  // Using the uploaded PNG image for the logo
   const Logo = ({ className }) => (
-    <svg className={className} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="16" cy="16" r="14" fill={themes[themeColor]?.[500] || '#f43f5e'} />
-      <path d="M12 10V13M12 13V22M12 13C11 13 10.5 12 10.5 10.5M12 13C13 13 13.5 12 13.5 10.5M12 10C11.5 10 11 9.5 11 9M12 10C12.5 10 13 9.5 13 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M20 9C18.5 9 17 10.5 17 12.5C17 14 18 15 20 15C22 15 23 14 23 12.5C23 10.5 21.5 9 20 9Z M20 15V22" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
+    <img src="/apple-touch-icon.png" className={className} alt="NibbleTrack Logo" />
   );
 
   // --- LOADING SCREEN ---
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-rose-50 font-sans">
-        <Head><title>NibbleTrack</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" /><script src="https://cdn.tailwindcss.com"></script></Head>
+        <Head>
+          <title>NibbleTrack</title>
+          <link rel="icon" href="/favicon.png" type="image/png" />
+          <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+          <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+          <script src="https://cdn.tailwindcss.com"></script>
+        </Head>
         <div className="flex flex-col items-center gap-4 animate-pulse">
-          <Logo className="h-12 w-12" />
+          <Logo className="h-12 w-12 rounded-xl" />
           <h1 className="text-2xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
         </div>
       </div>
@@ -392,14 +395,16 @@ export default function Home() {
       <div className="min-h-screen flex items-center justify-center bg-rose-50 p-4 font-sans">
         <Head>
           <title>NibbleTrack</title>
+          <link rel="icon" href="/favicon.png" type="image/png" />
+          <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
           <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
           <script src="https://cdn.tailwindcss.com"></script>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
           <style>{`html, body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }`}</style>
         </Head>
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-rose-100 max-w-md w-full">
           <div className="flex items-center justify-center gap-2 mb-6">
-            <Logo className="h-8 w-8" />
+            <Logo className="h-8 w-8 rounded-lg" />
             <h1 className="text-3xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
           </div>
           <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 mb-3 border border-rose-200 rounded-xl bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-300 text-base" />
@@ -416,9 +421,11 @@ export default function Home() {
     <div className="min-h-screen bg-rose-50 pb-24 font-sans" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
       <Head>
         <title>NibbleTrack</title>
+        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
         <style>{`
           html, body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
           ${generateThemeCSS(themeColor)}
@@ -427,7 +434,7 @@ export default function Home() {
 
       <header className="max-w-6xl mx-auto p-4 sm:p-6 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <Logo className="h-7 w-7" />
+          <Logo className="h-7 w-7 rounded-md" />
           <h1 className="text-2xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
         </div>
         <button onClick={handleLogout} className="text-xs text-rose-400 hover:underline">Log Out</button>
@@ -479,7 +486,7 @@ export default function Home() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100">
               <h2 className="text-xl font-semibold mb-4 text-gray-700">Today's Log</h2>
               <div className="space-y-3">
-                {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No meals logged yet.</div>}
+                {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5 rounded-sm" /> No meals logged yet.</div>}
                 {todaysMeals.map(meal => (
                   <div key={meal.id} className="relative overflow-hidden rounded-xl" style={{ backgroundColor: '#fee2e2' }}>
                     <div className="bg-white p-3 flex justify-between items-start border border-rose-100 rounded-xl" style={{ touchAction: 'pan-y' }} onTouchStart={(e) => handleTouchStart(e, meal.id)} onTouchMove={handleTouchMove} onTouchEnd={(e) => handleTouchEnd(e, meal.id)}>
@@ -603,7 +610,7 @@ export default function Home() {
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
             <h2 className="text-xl font-semibold mb-4 text-gray-700">My Recipes</h2>
             <div className="space-y-3">
-              {recipes.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No recipes saved yet.</div>}
+              {recipes.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5 rounded-sm" /> No recipes saved yet.</div>}
               {recipes.map(r => (
                 <div key={r.id} className="p-4 border border-rose-100 rounded-xl bg-white">
                   <h3 className="font-semibold text-gray-800">{r.name}</h3>
