@@ -20,8 +20,42 @@ const parseRange = (str) => {
   return [num, num];
 };
 
+// Theme Color Palettes
+const themes = {
+  rose: { name: 'Rose', 50: '#fff1f5', 100: '#ffe4e6', 200: '#fecdd3', 300: '#fda4af', 400: '#fb7185', 500: '#f43f5e', 600: '#e11d48' },
+  blue: { name: 'Blue', 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb' },
+  green: { name: 'Green', 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a' },
+  purple: { name: 'Purple', 50: '#faf5ff', 100: '#f3e8ff', 200: '#e9d5ff', 300: '#d8b4fe', 400: '#c084fc', 500: '#a855f7', 600: '#9333ea' },
+  orange: { name: 'Orange', 50: '#fff7ed', 100: '#ffedd5', 200: '#fed7aa', 300: '#fdba74', 400: '#fb923c', 500: '#f97316', 600: '#ea580c' }
+};
+
+// Generate CSS overrides to instantly recolor the app without rewriting all Tailwind classes
+const generateThemeCSS = (themeKey) => {
+  const c = themes[themeKey] || themes.rose;
+  return `
+    .bg-rose-50 { background-color: ${c[50]} !important; }
+    .bg-rose-100 { background-color: ${c[100]} !important; }
+    .bg-rose-200 { background-color: ${c[200]} !important; }
+    .bg-rose-500 { background-color: ${c[500]} !important; }
+    .hover\\:bg-rose-600:hover { background-color: ${c[600]} !important; }
+    .hover\\:bg-rose-200:hover { background-color: ${c[200]} !important; }
+    .text-rose-400 { color: ${c[400]} !important; }
+    .text-rose-500 { color: ${c[500]} !important; }
+    .text-rose-600 { color: ${c[600]} !important; }
+    .hover\\:text-rose-600:hover { color: ${c[600]} !important; }
+    .border-rose-100 { border-color: ${c[100]} !important; }
+    .border-rose-200 { border-color: ${c[200]} !important; }
+    .border-rose-500 { border-color: ${c[500]} !important; }
+    .focus\\:ring-rose-300:focus { --tw-ring-color: ${c[300]} !important; }
+    .ring-rose-300 { --tw-ring-color: ${c[300]} !important; }
+    .shadow-rose-100 { --tw-shadow-color: ${c[100]} !important; }
+    .shadow-rose-200 { --tw-shadow-color: ${c[200]} !important; }
+  `;
+};
+
 export default function Home() {
   const [session, setSession] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [todaysMeals, setTodaysMeals] = useState([]);
   const [historyData, setHistoryData] = useState([]);
   const [savedMeals, setSavedMeals] = useState([]);
@@ -29,7 +63,6 @@ export default function Home() {
   const [goals, setGoals] = useState({ calories_goal: 1200, protein_goal: 90, fiber_goal: 30, added_sugar_goal: 25, sodium_goal: 2000 });
   
   const [mealInput, setMealInput] = useState('');
-  const [imageBase64, setImageBase64] = useState(null);
   const [aiThinking, setAiThinking] = useState(false);
   const [activeTab, setActiveTab] = useState('tracker');
   const [email, setEmail] = useState('');
@@ -53,6 +86,9 @@ export default function Home() {
   const [savedMealToDelete, setSavedMealToDelete] = useState(null);
   const [editingSavedMealId, setEditingSavedMealId] = useState(null);
   const [editingSavedMealName, setEditingSavedMealName] = useState('');
+  
+  // Theme State
+  const [themeColor, setThemeColor] = useState('rose');
 
   const quickAddRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -61,6 +97,7 @@ export default function Home() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) fetchUserData(session.user.id);
+      setIsLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
@@ -129,6 +166,7 @@ export default function Home() {
       setSettingFib(data.fiber_goal);
       setSettingAs(data.added_sugar_goal);
       setSettingSod(data.sodium_goal);
+      if (data.theme_color) setThemeColor(data.theme_color);
     }
   };
 
@@ -150,18 +188,6 @@ export default function Home() {
     setTodaysMeals([]);
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImageBase64(reader.result);
-        setMealInput(prev => prev + (prev ? " " : "") + "[Photo attached]");
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const logMeal = async () => {
     if (!mealInput) return;
     setAiThinking(true);
@@ -169,7 +195,7 @@ export default function Home() {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mealText: mealInput.replace("[Photo attached]", "").trim(), imageBase64 })
+        body: JSON.stringify({ mealText: mealInput.replace("[Photo attached]", "").trim() })
       });
       const aiData = await response.json();
       if (aiData.error) throw new Error(aiData.error);
@@ -181,7 +207,6 @@ export default function Home() {
 
       setTodaysMeals([...todaysMeals, data]);
       setMealInput('');
-      setImageBase64(null);
       fetchHistory(session.user.id);
     } catch (error) {
       alert("Error logging meal: " + error.message);
@@ -240,6 +265,11 @@ export default function Home() {
     }).eq('id', session.user.id);
     if (error) alert(error.message);
     else { fetchGoals(session.user.id); alert("Goals saved!"); }
+  };
+
+  const changeTheme = async (color) => {
+    setThemeColor(color);
+    await supabase.from('profiles').update({ theme_color: color }).eq('id', session.user.id);
   };
 
   const handleRecipeChange = (index, field, value) => {
@@ -337,12 +367,26 @@ export default function Home() {
 
   const Logo = ({ className }) => (
     <svg className={className} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="16" cy="16" r="14" fill="#f43f5e" />
+      <circle cx="16" cy="16" r="14" fill={themes[themeColor]?.[500] || '#f43f5e'} />
       <path d="M12 10V13M12 13V22M12 13C11 13 10.5 12 10.5 10.5M12 13C13 13 13.5 12 13.5 10.5M12 10C11.5 10 11 9.5 11 9M12 10C12.5 10 13 9.5 13 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M20 9C18.5 9 17 10.5 17 12.5C17 14 18 15 20 15C22 15 23 14 23 12.5C23 10.5 21.5 9 20 9Z M20 15V22" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 
+  // --- LOADING SCREEN ---
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-rose-50 font-sans">
+        <Head><title>NibbleTrack</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" /><script src="https://cdn.tailwindcss.com"></script></Head>
+        <div className="flex flex-col items-center gap-4 animate-pulse">
+          <Logo className="h-12 w-12" />
+          <h1 className="text-2xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
+        </div>
+      </div>
+    );
+  }
+
+  // --- LOGIN SCREEN ---
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-rose-50 p-4 font-sans">
@@ -367,6 +411,7 @@ export default function Home() {
     );
   }
 
+  // --- MAIN APP ---
   return (
     <div className="min-h-screen bg-rose-50 pb-24 font-sans" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
       <Head>
@@ -374,7 +419,10 @@ export default function Home() {
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-        <style>{`html, body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }`}</style>
+        <style>{`
+          html, body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+          ${generateThemeCSS(themeColor)}
+        `}</style>
       </Head>
 
       <header className="max-w-6xl mx-auto p-4 sm:p-6 flex justify-between items-center">
@@ -385,6 +433,7 @@ export default function Home() {
         <button onClick={handleLogout} className="text-xs text-rose-400 hover:underline">Log Out</button>
       </header>
 
+      {/* ================= TRACKER VIEW ================= */}
       {activeTab === 'tracker' && (
         <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
@@ -414,14 +463,10 @@ export default function Home() {
               </div>
               
               <div className="relative w-full">
-                <textarea value={mealInput} onChange={(e) => setMealInput(e.target.value)} className="w-full p-3 pr-24 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" rows="3" placeholder="Type, speak, or photograph your meal..."></textarea>
+                <textarea value={mealInput} onChange={(e) => setMealInput(e.target.value)} className="w-full p-3 pr-14 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" rows="3" placeholder="Type or speak your meal..."></textarea>
                 <div className="absolute right-3 bottom-3 flex gap-2">
                   <button onClick={toggleMic} className={`p-2 rounded-lg transition ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-rose-100 text-rose-500 hover:bg-rose-200'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" /></svg>
-                  </button>
-                  <input type="file" id="cameraInput" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
-                  <button onClick={() => document.getElementById('cameraInput').click()} className="p-2 bg-rose-100 text-rose-500 rounded-lg hover:bg-rose-200 transition">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" /></svg>
                   </button>
                 </div>
               </div>
@@ -525,6 +570,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* ================= RECIPES VIEW ================= */}
       {activeTab === 'recipes' && (
         <div className="max-w-4xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 h-fit overflow-hidden">
@@ -569,6 +615,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* ================= SETTINGS VIEW ================= */}
       {activeTab === 'settings' && (
         <div className="max-w-2xl mx-auto px-4">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 mb-6 overflow-hidden">
@@ -581,6 +628,22 @@ export default function Home() {
               <div><label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-1">Sodium (mg)</label><input type="number" value={settingSod} onChange={(e) => setSettingSod(e.target.value)} className="w-full p-2.5 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" /></div>
             </div>
             <button onClick={saveGoals} className="mt-6 w-full bg-rose-500 text-white font-semibold py-3 rounded-xl hover:bg-rose-600 transition shadow-sm shadow-rose-200 box-border">Save Goals</button>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 mb-6 overflow-hidden">
+            <h2 className="text-xl font-semibold mb-4 text-gray-700">App Theme</h2>
+            <div className="flex flex-wrap gap-3">
+              {Object.entries(themes).map(([key, val]) => (
+                <button 
+                  key={key} 
+                  onClick={() => changeTheme(key)} 
+                  className={`flex items-center gap-2 p-2 pr-4 rounded-xl border transition ${themeColor === key ? 'border-gray-800 bg-gray-50' : 'border-rose-100 hover:bg-gray-50'}`}
+                >
+                  <span className="w-6 h-6 rounded-full" style={{ backgroundColor: val[500] }}></span>
+                  <span className="text-sm font-medium text-gray-700">{val.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
