@@ -20,7 +20,6 @@ const parseRange = (str) => {
   return [num, num];
 };
 
-// Theme Color Palettes
 const themes = {
   rose: { name: 'Rose', 50: '#fff1f5', 100: '#ffe4e6', 200: '#fecdd3', 300: '#fda4af', 400: '#fb7185', 500: '#f43f5e', 600: '#e11d48' },
   blue: { name: 'Blue', 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb' },
@@ -29,7 +28,6 @@ const themes = {
   orange: { name: 'Orange', 50: '#fff7ed', 100: '#ffedd5', 200: '#fed7aa', 300: '#fdba74', 400: '#fb923c', 500: '#f97316', 600: '#ea580c' }
 };
 
-// Generate CSS overrides to instantly recolor the app without rewriting all Tailwind classes
 const generateThemeCSS = (themeKey) => {
   const c = themes[themeKey] || themes.rose;
   return `
@@ -55,11 +53,13 @@ const generateThemeCSS = (themeKey) => {
 
 export default function Home() {
   const [session, setSession] = useState(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [todaysMeals, setTodaysMeals] = useState([]);
   const [historyData, setHistoryData] = useState([]);
   const [savedMeals, setSavedMeals] = useState([]);
-  const [recipes, setRecipes] = useState([]);
+  const [myRecipes, setMyRecipes] = useState([]);
+  const [publicRecipes, setPublicRecipes] = useState([]);
   const [goals, setGoals] = useState({ calories_goal: 1200, protein_goal: 90, fiber_goal: 30, added_sugar_goal: 25, sodium_goal: 2000 });
   
   const [mealInput, setMealInput] = useState('');
@@ -74,9 +74,15 @@ export default function Home() {
   const [settingAs, setSettingAs] = useState(25);
   const [settingSod, setSettingSod] = useState(2000);
 
+  // Recipe State
   const [recipeName, setRecipeName] = useState('');
-  const [recipeInstructions, setRecipeInstructions] = useState('');
-  const [ingredientRows, setIngredientRows] = useState([{ qty: '', unit: '', name: '' }]);
+  const [rawRecipeInput, setRawRecipeInput] = useState('');
+  const [finalRecipeDetails, setFinalRecipeDetails] = useState('');
+  const [formattingRecipe, setFormattingRecipe] = useState(false);
+  const [recipeSearch, setRecipeSearch] = useState('');
+  const [recipeSubTab, setRecipeSubTab] = useState('mine');
+  const [editingRecipeId, setEditingRecipeId] = useState(null);
+  const [editingRecipeText, setEditingRecipeText] = useState('');
 
   const [quickAddInput, setQuickAddInput] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -87,7 +93,6 @@ export default function Home() {
   const [editingSavedMealId, setEditingSavedMealId] = useState(null);
   const [editingSavedMealName, setEditingSavedMealName] = useState('');
   
-  // Theme State
   const [themeColor, setThemeColor] = useState('rose');
 
   const quickAddRef = useRef(null);
@@ -97,11 +102,17 @@ export default function Home() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) fetchUserData(session.user.id);
+      else fetchPublicRecipes();
       setIsLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchUserData(session.user.id);
+      if (session) {
+        setIsGuest(false);
+        fetchUserData(session.user.id);
+      } else {
+        fetchPublicRecipes();
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -110,8 +121,9 @@ export default function Home() {
     fetchMeals(userId);
     fetchHistory(userId);
     fetchSavedMeals(userId);
-    fetchRecipes(userId);
+    fetchMyRecipes(userId);
     fetchGoals(userId);
+    fetchPublicRecipes();
   };
 
   const fetchMeals = async (userId) => {
@@ -152,9 +164,14 @@ export default function Home() {
     if (data) setSavedMeals(data);
   };
 
-  const fetchRecipes = async (userId) => {
+  const fetchMyRecipes = async (userId) => {
     const { data } = await supabase.from('recipes').select('*').eq('user_id', userId);
-    if (data) setRecipes(data);
+    if (data) setMyRecipes(data);
+  };
+
+  const fetchPublicRecipes = async () => {
+    const { data } = await supabase.from('recipes').select('*').eq('is_public', true);
+    if (data) setPublicRecipes(data);
   };
 
   const fetchGoals = async (userId) => {
@@ -184,8 +201,20 @@ export default function Home() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setTodaysMeals([]);
+    if (isGuest) {
+      setIsGuest(false);
+      setActiveTab('tracker');
+    } else {
+      await supabase.auth.signOut();
+      setTodaysMeals([]);
+      setMyRecipes([]);
+    }
+  };
+
+  const enterGuestMode = () => {
+    setIsGuest(true);
+    setActiveTab('recipes');
+    setRecipeSubTab('discover');
   };
 
   const logMeal = async () => {
@@ -269,32 +298,39 @@ export default function Home() {
 
   const changeTheme = async (color) => {
     setThemeColor(color);
-    await supabase.from('profiles').update({ theme_color: color }).eq('id', session.user.id);
+    if (session) await supabase.from('profiles').update({ theme_color: color }).eq('id', session.user.id);
   };
 
-  const handleRecipeChange = (index, field, value) => {
-    const updatedRows = [...ingredientRows];
-    updatedRows[index][field] = value;
-    setIngredientRows(updatedRows);
+  // Recipe AI Formatting
+  const formatRecipeWithAI = async () => {
+    if (!rawRecipeInput) return alert("Please paste some raw text first.");
+    setFormattingRecipe(true);
+    try {
+      const response = await fetch('/api/format-recipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawText: rawRecipeInput })
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      setFinalRecipeDetails(data.formattedText);
+    } catch (error) {
+      alert("Error formatting recipe: " + error.message);
+    } finally {
+      setFormattingRecipe(false);
+    }
   };
-
-  const addIngredientRow = () => setIngredientRows([...ingredientRows, { qty: '', unit: '', name: '' }]);
-  const removeIngredientRow = (index) => setIngredientRows(ingredientRows.filter((_, i) => i !== index));
 
   const saveRecipe = async () => {
     if (!recipeName) return alert("Please enter a recipe name.");
-    let details = "Ingredients:\n";
-    ingredientRows.forEach(row => {
-      if (row.qty || row.unit || row.name) details += `- ${row.qty} ${row.unit} ${row.name}\n`.replace(/\s+/g, ' ').trim() + "\n";
-    });
-    if (recipeInstructions) details += `\nInstructions:\n${recipeInstructions}`;
+    if (!finalRecipeDetails) return alert("Please format or enter the recipe details.");
 
     const { data, error } = await supabase.from('recipes').insert([
-      { user_id: session.user.id, name: recipeName, details }
+      { user_id: session.user.id, name: recipeName, details: finalRecipeDetails }
     ]).select().single();
     if (error) return alert(error.message);
     
-    setRecipes([...recipes, data]);
+    setMyRecipes([...myRecipes, data]);
     
     if (!savedMeals.some(m => m.name === recipeName)) {
       const { data: savedMealData } = await supabase.from('saved_meals').insert([{ user_id: session.user.id, name: recipeName }]).select().single();
@@ -302,8 +338,33 @@ export default function Home() {
     }
 
     setRecipeName('');
-    setRecipeInstructions('');
-    setIngredientRows([{ qty: '', unit: '', name: '' }]);
+    setRawRecipeInput('');
+    setFinalRecipeDetails('');
+  };
+
+  const toggleRecipePublic = async (recipe) => {
+    const newPublicState = !recipe.is_public;
+    const { data, error } = await supabase.from('recipes').update({ is_public: newPublicState }).eq('id', recipe.id).select().single();
+    if (data) {
+      setMyRecipes(myRecipes.map(r => r.id === recipe.id ? data : r));
+      fetchPublicRecipes();
+    }
+  };
+
+  const deleteRecipe = async (id) => {
+    await supabase.from('recipes').delete().eq('id', id);
+    setMyRecipes(myRecipes.filter(r => r.id !== id));
+  };
+
+  const startEditRecipe = (r) => {
+    setEditingRecipeId(r.id);
+    setEditingRecipeText(r.details);
+  };
+
+  const saveEditedRecipe = async (id) => {
+    const { data, error } = await supabase.from('recipes').update({ details: editingRecipeText }).eq('id', id).select().single();
+    if (data) setMyRecipes(myRecipes.map(r => r.id === id ? data : r));
+    setEditingRecipeId(null);
   };
 
   useEffect(() => {
@@ -365,9 +426,19 @@ export default function Home() {
     return acc;
   }, { caloriesMin: 0, caloriesMax: 0, proteinMin: 0, proteinMax: 0, fiberMin: 0, fiberMax: 0, totalSugarMin: 0, totalSugarMax: 0, addedSugarMin: 0, addedSugarMax: 0, sodiumMin: 0, sodiumMax: 0 });
 
-  // Using the uploaded PNG image for the logo
   const Logo = ({ className }) => (
-    <img src="/apple-touch-icon.png" className={className} alt="NibbleTrack Logo" />
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="12" fill={themes[themeColor]?.[500] || '#f43f5e'} />
+      <g transform="rotate(-45 12 12)">
+        <path d="M11 3v4 M13 3v4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M11 7h2v3a2 2 0 0 1-2 0V7z" fill="white"/>
+        <path d="M12 10v11" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+      </g>
+      <g transform="rotate(45 12 12)">
+        <path d="M12 3c-1.5 0-3 1.5-3 3v2c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2V6c0-1.5-1.5-3-3-3z" fill="white"/>
+        <path d="M12 10v11" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+      </g>
+    </svg>
   );
 
   // --- LOADING SCREEN ---
@@ -382,7 +453,7 @@ export default function Home() {
           <script src="https://cdn.tailwindcss.com"></script>
         </Head>
         <div className="flex flex-col items-center gap-4 animate-pulse">
-          <Logo className="h-12 w-12 rounded-xl" />
+          <Logo className="h-12 w-12" />
           <h1 className="text-2xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
         </div>
       </div>
@@ -390,7 +461,7 @@ export default function Home() {
   }
 
   // --- LOGIN SCREEN ---
-  if (!session) {
+  if (!session && !isGuest) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-rose-50 p-4 font-sans">
         <Head>
@@ -404,13 +475,15 @@ export default function Home() {
         </Head>
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-rose-100 max-w-md w-full">
           <div className="flex items-center justify-center gap-2 mb-6">
-            <Logo className="h-8 w-8 rounded-lg" />
+            <Logo className="h-8 w-8" />
             <h1 className="text-3xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
           </div>
           <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 mb-3 border border-rose-200 rounded-xl bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-300 text-base" />
           <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-300 text-base" />
           <button onClick={handleLogin} className="w-full bg-rose-500 text-white py-3 rounded-xl mb-2 font-semibold hover:bg-rose-600 transition">Log In</button>
-          <button onClick={handleSignUp} className="w-full bg-white text-rose-500 border border-rose-200 py-3 rounded-xl font-semibold hover:bg-rose-50 transition">Sign Up</button>
+          <button onClick={handleSignUp} className="w-full bg-white text-rose-500 border border-rose-200 py-3 rounded-xl font-semibold hover:bg-rose-50 transition mb-4">Sign Up</button>
+          <div className="text-center text-xs text-gray-400 mb-2">— OR —</div>
+          <button onClick={enterGuestMode} className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-200 transition">View Shared Recipes</button>
         </div>
       </div>
     );
@@ -434,14 +507,16 @@ export default function Home() {
 
       <header className="max-w-6xl mx-auto p-4 sm:p-6 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <Logo className="h-7 w-7 rounded-md" />
+          <Logo className="h-7 w-7" />
           <h1 className="text-2xl font-bold text-rose-500 tracking-tight">NibbleTrack</h1>
         </div>
-        <button onClick={handleLogout} className="text-xs text-rose-400 hover:underline">Log Out</button>
+        <button onClick={handleLogout} className="text-xs text-rose-400 hover:underline">
+          {isGuest ? 'Log In' : 'Log Out'}
+        </button>
       </header>
 
       {/* ================= TRACKER VIEW ================= */}
-      {activeTab === 'tracker' && (
+      {activeTab === 'tracker' && !isGuest && (
         <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 relative">
@@ -486,7 +561,7 @@ export default function Home() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100">
               <h2 className="text-xl font-semibold mb-4 text-gray-700">Today's Log</h2>
               <div className="space-y-3">
-                {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5 rounded-sm" /> No meals logged yet.</div>}
+                {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No meals logged yet.</div>}
                 {todaysMeals.map(meal => (
                   <div key={meal.id} className="relative overflow-hidden rounded-xl" style={{ backgroundColor: '#fee2e2' }}>
                     <div className="bg-white p-3 flex justify-between items-start border border-rose-100 rounded-xl" style={{ touchAction: 'pan-y' }} onTouchStart={(e) => handleTouchStart(e, meal.id)} onTouchMove={handleTouchMove} onTouchEnd={(e) => handleTouchEnd(e, meal.id)}>
@@ -580,50 +655,103 @@ export default function Home() {
       {/* ================= RECIPES VIEW ================= */}
       {activeTab === 'recipes' && (
         <div className="max-w-4xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 h-fit overflow-hidden">
-            <h2 className="text-xl font-semibold mb-4 text-gray-700">Add Healthy Recipe</h2>
-            <input type="text" value={recipeName} onChange={(e) => setRecipeName(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" placeholder="Recipe Name (e.g., Quinoa Salad)" />
-            <label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-3">Ingredients</label>
-            <div className="space-y-3 mb-3">
-              {ingredientRows.map((row, index) => (
-                <div key={index} className="flex gap-2 items-center min-w-0">
-                  <input type="text" value={row.qty} onChange={(e) => handleRecipeChange(index, 'qty', e.target.value)} className="w-16 min-w-0 p-2.5 text-center bg-rose-50 border border-rose-200 rounded-lg text-base focus:outline-none box-border" placeholder="Qty" />
-                  <select value={row.unit} onChange={(e) => handleRecipeChange(index, 'unit', e.target.value)} className="w-24 min-w-0 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-base focus:outline-none box-border">
-                    <option value="">Unit</option>
-                    <option value="cup">cup</option>
-                    <option value="tbsp">tbsp</option>
-                    <option value="tsp">tsp</option>
-                    <option value="piece">piece</option>
-                    <option value="g">g</option>
-                    <option value="ml">ml</option>
-                  </select>
-                  <input type="text" value={row.name} onChange={(e) => handleRecipeChange(index, 'name', e.target.value)} className="flex-1 min-w-0 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-base focus:outline-none box-border" placeholder="Ingredient" />
-                  <button onClick={() => removeIngredientRow(index)} className="p-2 text-rose-300 hover:text-rose-500 hover:bg-rose-100 rounded-lg transition flex items-center justify-center w-10 h-10 flex-shrink-0">✕</button>
+          {/* Add Recipe Form (Only for logged in users) */}
+          {session && recipeSubTab === 'mine' && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 h-fit overflow-hidden">
+              <h2 className="text-xl font-semibold mb-4 text-gray-700">Add Healthy Recipe</h2>
+              <input type="text" value={recipeName} onChange={(e) => setRecipeName(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" placeholder="Recipe Name (e.g., Quinoa Salad)" />
+              
+              <label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-2">Raw Ingredients (Paste here)</label>
+              <textarea value={rawRecipeInput} onChange={(e) => setRawRecipeInput(e.target.value)} className="w-full p-3 border border-rose-200 rounded-xl mb-2 focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" rows="3" placeholder="e.g., 2 cups flour 1 cup sugar 2 eggs mix and bake at 350..."></textarea>
+              <button onClick={formatRecipeWithAI} disabled={formattingRecipe} className="w-full bg-blue-500 text-white font-semibold py-2 rounded-xl mb-4 disabled:opacity-50 hover:bg-blue-600 transition">
+                {formattingRecipe ? 'Formatting...' : 'Format with AI ✨'}
+              </button>
+
+              <label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-2">Final Recipe Details</label>
+              <textarea value={finalRecipeDetails} onChange={(e) => setFinalRecipeDetails(e.target.value)} className="w-full p-3 border border-rose-200 rounded-xl mb-4 focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" rows="4" placeholder="AI will format this, or type it manually..."></textarea>
+              <button onClick={saveRecipe} className="w-full bg-green-500 text-white font-semibold py-3 rounded-xl hover:bg-green-600 transition shadow-sm shadow-green-200 box-border">Save Recipe</button>
+            </div>
+          )}
+
+          {/* Recipe List & Search */}
+          <div className={`${session && recipeSubTab === 'mine' ? '' : 'md:col-span-2'} bg-white p-6 rounded-2xl shadow-sm border border-rose-100 overflow-hidden`}>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-700">Recipes</h2>
+            </div>
+            
+            <div className="flex gap-2 mb-4">
+              <input 
+                type="text" 
+                value={recipeSearch} 
+                onChange={(e) => setRecipeSearch(e.target.value)} 
+                className="flex-1 p-2.5 border border-rose-200 rounded-xl text-base focus:outline-none bg-rose-50/30" 
+                placeholder="Search recipes..." 
+              />
+            </div>
+
+            {session && (
+              <div className="flex border-b border-rose-100 mb-4">
+                <button onClick={() => setRecipeSubTab('mine')} className={`flex-1 py-2 text-sm font-medium ${recipeSubTab === 'mine' ? 'text-rose-600 border-b-2 border-rose-500' : 'text-gray-400'}`}>My Recipes</button>
+                <button onClick={() => setRecipeSubTab('discover')} className={`flex-1 py-2 text-sm font-medium ${recipeSubTab === 'discover' ? 'text-rose-600 border-b-2 border-rose-500' : 'text-gray-400'}`}>Discover</button>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {/* My Recipes Logic */}
+              {recipeSubTab === 'mine' && session && myRecipes
+                .filter(r => r.name.toLowerCase().includes(recipeSearch.toLowerCase()) || r.details.toLowerCase().includes(recipeSearch.toLowerCase()))
+                .map(r => (
+                <div key={r.id} className="p-4 border border-rose-100 rounded-xl bg-white">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-semibold text-gray-800">{r.name}</h3>
+                    <button onClick={() => toggleRecipePublic(r)} className={`text-xs px-2 py-1 rounded-full ${r.is_public ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {r.is_public ? 'Public' : 'Private'}
+                    </button>
+                  </div>
+                  {editingRecipeId === r.id ? (
+                    <>
+                      <textarea value={editingRecipeText} onChange={(e) => setEditingRecipeText(e.target.value)} className="w-full p-2 border border-rose-200 rounded-lg text-sm mb-2" rows="4" />
+                      <div className="flex gap-2">
+                        <button onClick={() => saveEditedRecipe(r.id)} className="text-xs text-green-600 font-medium">Save</button>
+                        <button onClick={() => setEditingRecipeId(null)} className="text-xs text-gray-500 font-medium">Cancel</button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{r.details}</p>
+                  )}
+                  {editingRecipeId !== r.id && (
+                    <div className="flex gap-3 mt-3 border-t border-rose-50 pt-3">
+                      <button onClick={() => startEditRecipe(r)} className="text-xs text-rose-400 hover:text-rose-600 font-medium">Edit</button>
+                      <button onClick={() => deleteRecipe(r.id)} className="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>
+                    </div>
+                  )}
                 </div>
               ))}
-            </div>
-            <button onClick={addIngredientRow} className="w-full p-2.5 border border-dashed border-rose-300 rounded-xl text-sm text-rose-500 font-medium hover:bg-rose-50 transition flex items-center justify-center gap-1 mb-6 box-border">+ Add Ingredient</button>
-            <label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-2">Instructions</label>
-            <textarea value={recipeInstructions} onChange={(e) => setRecipeInstructions(e.target.value)} className="w-full p-3 border border-rose-200 rounded-xl mb-4 focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" rows="4" placeholder="Steps to prepare..."></textarea>
-            <button onClick={saveRecipe} className="w-full bg-green-500 text-white font-semibold py-3 rounded-xl hover:bg-green-600 transition shadow-sm shadow-green-200 box-border">Save Recipe</button>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
-            <h2 className="text-xl font-semibold mb-4 text-gray-700">My Recipes</h2>
-            <div className="space-y-3">
-              {recipes.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5 rounded-sm" /> No recipes saved yet.</div>}
-              {recipes.map(r => (
-                <div key={r.id} className="p-4 border border-rose-100 rounded-xl bg-white">
+
+              {/* Discover Recipes Logic */}
+              {recipeSubTab === 'discover' && publicRecipes
+                .filter(r => r.name.toLowerCase().includes(recipeSearch.toLowerCase()) || r.details.toLowerCase().includes(recipeSearch.toLowerCase()))
+                .map(r => (
+                <div key={r.id} className="p-4 border border-rose-100 rounded-xl bg-rose-50/30">
                   <h3 className="font-semibold text-gray-800">{r.name}</h3>
                   <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{r.details}</p>
                 </div>
               ))}
+              
+              {/* Empty States */}
+              {recipeSubTab === 'mine' && myRecipes.filter(r => r.name.toLowerCase().includes(recipeSearch.toLowerCase()) || r.details.toLowerCase().includes(recipeSearch.toLowerCase())).length === 0 && (
+                <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No recipes found.</div>
+              )}
+              {recipeSubTab === 'discover' && publicRecipes.filter(r => r.name.toLowerCase().includes(recipeSearch.toLowerCase()) || r.details.toLowerCase().includes(recipeSearch.toLowerCase())).length === 0 && (
+                <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No public recipes found.</div>
+              )}
             </div>
           </div>
         </div>
       )}
 
       {/* ================= SETTINGS VIEW ================= */}
-      {activeTab === 'settings' && (
+      {activeTab === 'settings' && session && (
         <div className="max-w-2xl mx-auto px-4">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 mb-6 overflow-hidden">
             <h2 className="text-xl font-semibold mb-6 text-gray-700">Daily Goals</h2>
@@ -705,10 +833,17 @@ export default function Home() {
         </div>
       )}
 
+      {/* Bottom Nav Logic for Guest vs Logged In */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-rose-100 flex" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <button onClick={() => setActiveTab('tracker')} className={`flex-1 py-3 font-medium ${activeTab === 'tracker' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Tracker</button>
-        <button onClick={() => setActiveTab('recipes')} className={`flex-1 py-3 font-medium ${activeTab === 'recipes' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Recipes</button>
-        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 font-medium ${activeTab === 'settings' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Settings</button>
+        {!isGuest && (
+          <button onClick={() => setActiveTab('tracker')} className={`flex-1 py-3 font-medium ${activeTab === 'tracker' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Tracker</button>
+        )}
+        <button onClick={() => setActiveTab('recipes')} className={`flex-1 py-3 font-medium ${activeTab === 'recipes' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>
+          {isGuest ? 'Public Recipes' : 'Recipes'}
+        </button>
+        {!isGuest && (
+          <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 font-medium ${activeTab === 'settings' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Settings</button>
+        )}
       </nav>
     </div>
   );
