@@ -11,7 +11,11 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Missing GROQ_API_KEY in Vercel Environment Variables.' });
     }
 
-    const prompt = `You are a professional chef and recipe formatter. Take the following raw text and format it into a clean, readable recipe. Include an "Ingredients:" section (as a bulleted list) and an "Instructions:" section (as a numbered list). Return ONLY the formatted text, do not include any conversational filler.\n\nRaw Text: ${rawText}`;
+    const prompt = `You are a professional chef and recipe formatter. Take the following raw text and format it into a clean, readable recipe. 
+    DO NOT include a title in your response, as the user provides the title separately. 
+    Start with "Ingredients:" followed by a to-do list format for each ingredient (e.g., "- [ ] 1 cup almond butter"). 
+    Then add a newline and "Instructions:" followed by a numbered list (e.g., "1. Preheat the oven..."). 
+    Return ONLY the formatted text, do not include any conversational filler.\n\nRaw Text: ${rawText}`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
