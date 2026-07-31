@@ -51,6 +51,23 @@ const generateThemeCSS = (themeKey) => {
   `;
 };
 
+// Helper to render recipe details with clickable checkboxes
+const renderRecipeDetails = (details) => {
+  if (!details) return null;
+  return details.split('\n').map((line, index) => {
+    if (line.trim().startsWith('- [ ]')) {
+      const text = line.replace('- [ ]', '').trim();
+      return (
+        <div key={index} className="flex items-center gap-2 my-1">
+          <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-rose-500 focus:ring-rose-400" />
+          <span className="text-sm text-gray-600">{text}</span>
+        </div>
+      );
+    }
+    return <div key={index} className="text-sm text-gray-600">{line}</div>;
+  });
+};
+
 export default function Home() {
   const [session, setSession] = useState(null);
   const [isGuest, setIsGuest] = useState(false);
@@ -74,7 +91,6 @@ export default function Home() {
   const [settingAs, setSettingAs] = useState(25);
   const [settingSod, setSettingSod] = useState(2000);
 
-  // Recipe State
   const [recipeName, setRecipeName] = useState('');
   const [rawRecipeInput, setRawRecipeInput] = useState('');
   const [finalRecipeDetails, setFinalRecipeDetails] = useState('');
@@ -301,7 +317,6 @@ export default function Home() {
     if (session) await supabase.from('profiles').update({ theme_color: color }).eq('id', session.user.id);
   };
 
-  // Recipe AI Formatting
   const formatRecipeWithAI = async () => {
     if (!rawRecipeInput) return alert("Please paste some raw text first.");
     setFormattingRecipe(true);
@@ -426,19 +441,9 @@ export default function Home() {
     return acc;
   }, { caloriesMin: 0, caloriesMax: 0, proteinMin: 0, proteinMax: 0, fiberMin: 0, fiberMax: 0, totalSugarMin: 0, totalSugarMax: 0, addedSugarMin: 0, addedSugarMax: 0, sodiumMin: 0, sodiumMax: 0 });
 
+  // Using your uploaded PNG for the logo
   const Logo = ({ className }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="12" fill={themes[themeColor]?.[500] || '#f43f5e'} />
-      <g transform="rotate(-45 12 12)">
-        <path d="M11 3v4 M13 3v4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M11 7h2v3a2 2 0 0 1-2 0V7z" fill="white"/>
-        <path d="M12 10v11" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-      </g>
-      <g transform="rotate(45 12 12)">
-        <path d="M12 3c-1.5 0-3 1.5-3 3v2c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2V6c0-1.5-1.5-3-3-3z" fill="white"/>
-        <path d="M12 10v11" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-      </g>
-    </svg>
+    <img src="/apple-touch-icon.png" className={className} alt="NibbleTrack Logo" style={{ borderRadius: '20%' }} />
   );
 
   // --- LOADING SCREEN ---
@@ -655,11 +660,10 @@ export default function Home() {
       {/* ================= RECIPES VIEW ================= */}
       {activeTab === 'recipes' && (
         <div className="max-w-4xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Add Recipe Form (Only for logged in users) */}
           {session && recipeSubTab === 'mine' && (
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 h-fit overflow-hidden">
               <h2 className="text-xl font-semibold mb-4 text-gray-700">Add Healthy Recipe</h2>
-              <input type="text" value={recipeName} onChange={(e) => setRecipeName(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" placeholder="Recipe Name (e.g., Quinoa Salad)" />
+              <input type="text" value={recipeName} onChange={(e) => setRecipeName(e.target.value)} className="w-full p-3 mb-4 border border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" placeholder="Recipe Name (e.g., Sugar-free Cookies)" />
               
               <label className="text-xs font-medium text-rose-400 uppercase tracking-wider block mb-2">Raw Ingredients (Paste here)</label>
               <textarea value={rawRecipeInput} onChange={(e) => setRawRecipeInput(e.target.value)} className="w-full p-3 border border-rose-200 rounded-xl mb-2 focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border text-base" rows="3" placeholder="e.g., 2 cups flour 1 cup sugar 2 eggs mix and bake at 350..."></textarea>
@@ -673,7 +677,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Recipe List & Search */}
           <div className={`${session && recipeSubTab === 'mine' ? '' : 'md:col-span-2'} bg-white p-6 rounded-2xl shadow-sm border border-rose-100 overflow-hidden`}>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-gray-700">Recipes</h2>
@@ -697,7 +700,6 @@ export default function Home() {
             )}
 
             <div className="space-y-3">
-              {/* My Recipes Logic */}
               {recipeSubTab === 'mine' && session && myRecipes
                 .filter(r => r.name.toLowerCase().includes(recipeSearch.toLowerCase()) || r.details.toLowerCase().includes(recipeSearch.toLowerCase()))
                 .map(r => (
@@ -717,7 +719,7 @@ export default function Home() {
                       </div>
                     </>
                   ) : (
-                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{r.details}</p>
+                    <div className="mt-1">{renderRecipeDetails(r.details)}</div>
                   )}
                   {editingRecipeId !== r.id && (
                     <div className="flex gap-3 mt-3 border-t border-rose-50 pt-3">
@@ -728,17 +730,15 @@ export default function Home() {
                 </div>
               ))}
 
-              {/* Discover Recipes Logic */}
               {recipeSubTab === 'discover' && publicRecipes
                 .filter(r => r.name.toLowerCase().includes(recipeSearch.toLowerCase()) || r.details.toLowerCase().includes(recipeSearch.toLowerCase()))
                 .map(r => (
                 <div key={r.id} className="p-4 border border-rose-100 rounded-xl bg-rose-50/30">
                   <h3 className="font-semibold text-gray-800">{r.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{r.details}</p>
+                  <div className="mt-1">{renderRecipeDetails(r.details)}</div>
                 </div>
               ))}
               
-              {/* Empty States */}
               {recipeSubTab === 'mine' && myRecipes.filter(r => r.name.toLowerCase().includes(recipeSearch.toLowerCase()) || r.details.toLowerCase().includes(recipeSearch.toLowerCase())).length === 0 && (
                 <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No recipes found.</div>
               )}
@@ -833,7 +833,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Bottom Nav Logic for Guest vs Logged In */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-rose-100 flex" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {!isGuest && (
           <button onClick={() => setActiveTab('tracker')} className={`flex-1 py-3 font-medium ${activeTab === 'tracker' ? 'text-rose-600 border-t-2 border-rose-500' : 'text-gray-400'}`}>Tracker</button>
