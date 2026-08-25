@@ -5,10 +5,10 @@ export default async function handler(req, res) {
 
   try {
     const { rawText } = req.body;
-    const GROQ_API_KEY = process.env.GROQ_API_KEY;
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-    if (!GROQ_API_KEY) {
-      return res.status(500).json({ error: 'Missing GROQ_API_KEY in Vercel Environment Variables.' });
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'Missing GEMINI_API_KEY in Vercel Environment Variables.' });
     }
 
     const prompt = `You are a professional chef and recipe formatter. Take the following raw text and format it into a clean, readable recipe. 
@@ -17,27 +17,29 @@ export default async function handler(req, res) {
     Then add a newline and "Instructions:" followed by a numbered list (e.g., "1. Preheat the oven..."). 
     Return ONLY the formatted text, do not include any conversational filler.\n\nRaw Text: ${rawText}`;
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    // Using Gemini 3.5 Flash Lite
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent`;
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`
+        'x-goog-api-key': GEMINI_API_KEY
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3 }
       })
     });
 
     const data = await response.json();
 
-    if (!response.ok || !data.choices || !data.choices[0]) {
-      console.error("Groq API Error:", data);
-      return res.status(500).json({ error: `Groq API Error: ${data.error?.message || 'Unknown error'}` });
+    if (!response.ok || !data.candidates || !data.candidates[0]) {
+      console.error("Gemini API Error:", data);
+      return res.status(500).json({ error: `Gemini API Error: ${data.error?.message || 'Unknown error'}` });
     }
 
-    const formattedText = data.choices[0].message.content;
+    const formattedText = data.candidates[0].content.parts[0].text;
     res.status(200).json({ formattedText });
   } catch (error) {
     console.error('Server Error:', error);
