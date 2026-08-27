@@ -74,13 +74,11 @@ export default function Home() {
   const [todaysMeals, setTodaysMeals] = useState([]);
   const [historyData, setHistoryData] = useState([]);
   const [savedMeals, setSavedMeals] = useState([]);
+  const [recentMeals, setRecentMeals] = useState([]);
   const [myRecipes, setMyRecipes] = useState([]);
   const [publicRecipes, setPublicRecipes] = useState([]);
   const [goals, setGoals] = useState({ calories_goal: 1200, protein_goal: 90, fiber_goal: 30, added_sugar_goal: 25, sodium_goal: 2000 });
   
-  const [mealInput, setMealInput] = useState('');
-  const [imageBase64, setImageBase64] = useState(null);
-  const [aiThinking, setAiThinking] = useState(false);
   const [activeTab, setActiveTab] = useState('tracker');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -100,10 +98,6 @@ export default function Home() {
   const [editingRecipeId, setEditingRecipeId] = useState(null);
   const [editingRecipeText, setEditingRecipeText] = useState('');
 
-  const [quickAddInput, setQuickAddInput] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  
   const [mealToDelete, setMealToDelete] = useState(null);
   const [savedMealToDelete, setSavedMealToDelete] = useState(null);
   const [editingSavedMealId, setEditingSavedMealId] = useState(null);
@@ -116,10 +110,9 @@ export default function Home() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatThinking, setChatThinking] = useState(false);
+  const [showSavedWidget, setShowSavedWidget] = useState(false);
+  const [showRecentWidget, setShowRecentWidget] = useState(false);
   const chatScrollRef = useRef(null);
-
-  const quickAddRef = useRef(null);
-  const recognitionRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -150,6 +143,7 @@ export default function Home() {
     fetchMeals(userId);
     fetchHistory(userId);
     fetchSavedMeals(userId);
+    fetchRecentMeals(userId);
     fetchMyRecipes(userId);
     fetchGoals(userId);
     fetchPublicRecipes();
@@ -159,6 +153,14 @@ export default function Home() {
     const today = new Date().toISOString().split('T')[0];
     const { data } = await supabase.from('meals').select('*').eq('user_id', userId).gte('created_at', today);
     if (data) setTodaysMeals(data);
+  };
+
+  const fetchRecentMeals = async (userId) => {
+    const { data } = await supabase.from('meals').select('description').eq('user_id', userId).order('created_at', { ascending: false }).limit(10);
+    if (data) {
+      const unique = [...new Set(data.map(m => m.description))].map(desc => ({ description: desc }));
+      setRecentMeals(unique);
+    }
   };
 
   const fetchHistory = async (userId) => {
@@ -246,43 +248,68 @@ export default function Home() {
     setRecipeSubTab('discover');
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImageBase64(reader.result);
-        setMealInput(prev => prev + (prev ? " " : "") + "[Photo attached]");
-      };
-      reader.readAsDataURL(file);
+  // Chat Logic
+  const handleSendChat = async () => {
+    if (!chatInput.trim()) return;
+    const userMsg = { text: chatInput, role: 'user', id: Date.now() };
+    const history = chatMessages.map(m => ({ text: m.text, role: m.role === 'user' ? 'user' : 'model' }));
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setChatThinking(true);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: chatInput, history })
+      });
+      const data = await res.json();
+      
+      if (data.reply) {
+        // The API returns a JSON string, so we parse it
+        const parsed = JSON.parse(data.reply);
+        
+        if (parsed.type === 'food_suggestion') {
+          setChatMessages(prev => [...prev, { 
+            type: 'food_suggestion', 
+            text: parsed.text, 
+            meal: parsed.meal, 
+            role: 'assistant', 
+            id: Date.now(),
+            logged: false
+          }]);
+        } else {
+          setChatMessages(prev => [...prev, { 
+            type: 'chat', 
+            text: parsed.text, 
+            role: 'assistant', 
+            id: Date.now() 
+          }]);
+        }
+      } else {
+        alert(data.error || "Chat error");
+      }
+    } catch (e) {
+      alert("Failed to get response");
+    } finally {
+      setChatThinking(false);
     }
   };
 
-  const logMeal = async () => {
-    if (!mealInput) return;
-    setAiThinking(true);
-    try {
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mealText: mealInput.replace("[Photo attached]", "").trim(), imageBase64 })
-      });
-      const aiData = await response.json();
-      if (aiData.error) throw new Error(aiData.error);
-
-      const { data, error } = await supabase.from('meals').insert([
-        { user_id: session.user.id, description: mealInput.replace("[Photo attached]", "").trim(), ...aiData }
-      ]).select().single();
-      if (error) throw error;
-
-      setTodaysMeals([...todaysMeals, data]);
-      setMealInput('');
-      setImageBase64(null);
+  // Add meal from Chat Card
+  const addMealFromChat = async (mealData, msgId) => {
+    const { data, error } = await supabase.from('meals').insert([
+      { user_id: session.user.id, ...mealData }
+    ]).select().single();
+    
+    if (data) {
+      setTodaysMeals(prev => [...prev, data]);
       fetchHistory(session.user.id);
-    } catch (error) {
-      alert("Error logging meal: " + error.message);
-    } finally {
-      setAiThinking(false);
+      fetchRecentMeals(session.user.id);
+      // Update chat message to show it was logged
+      setChatMessages(prev => prev.map(m => m.id === msgId ? { ...m, logged: true } : m));
+    } else {
+      alert("Error logging meal");
     }
   };
 
@@ -293,15 +320,6 @@ export default function Home() {
     setTodaysMeals(todaysMeals.filter(m => m.id !== mealToDelete));
     setMealToDelete(null);
     fetchHistory(session.user.id);
-  };
-
-  const saveQuickMeal = async () => {
-    if (quickAddInput && !savedMeals.some(m => m.name === quickAddInput)) {
-      const { data } = await supabase.from('saved_meals').insert([{ user_id: session.user.id, name: quickAddInput }]).select().single();
-      if (data) setSavedMeals([...savedMeals, data]);
-      setQuickAddInput('');
-    }
-    quickAddRef.current.focus();
   };
 
   const startEditSavedMeal = (m) => {
@@ -321,13 +339,6 @@ export default function Home() {
     await supabase.from('saved_meals').delete().eq('id', savedMealToDelete);
     setSavedMeals(savedMeals.filter(m => m.id !== savedMealToDelete));
     setSavedMealToDelete(null);
-  };
-
-  const selectSuggestion = (meal) => {
-    setMealInput(prev => prev + (prev ? ", " : "") + meal);
-    setQuickAddInput('');
-    setShowSuggestions(false);
-    quickAddRef.current.focus();
   };
 
   const saveGoals = async () => {
@@ -406,101 +417,6 @@ export default function Home() {
     const { data, error } = await supabase.from('recipes').update({ details: editingRecipeText }).eq('id', id).select().single();
     if (data) setMyRecipes(myRecipes.map(r => r.id === id ? data : r));
     setEditingRecipeId(null);
-  };
-
-  // Chat Logic
-  const handleSendChat = async () => {
-    if (!chatInput.trim()) return;
-    const userMsg = { text: chatInput, role: 'user', id: Date.now() };
-    const history = chatMessages.map(m => ({ text: m.text, role: m.role === 'user' ? 'user' : 'model' }));
-    setChatMessages(prev => [...prev, userMsg]);
-    setChatInput('');
-    setChatThinking(true);
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: chatInput, history })
-      });
-      const data = await res.json();
-      if (data.reply) {
-        setChatMessages(prev => [...prev, { text: data.reply, role: 'assistant', id: Date.now() + 1 }]);
-      } else {
-        alert(data.error || "Chat error");
-      }
-    } catch (e) {
-      alert("Failed to get response");
-    } finally {
-      setChatThinking(false);
-    }
-  };
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'en-US';
-        recognition.interimResults = false;
-        recognitionRef.current = recognition;
-        
-        recognition.onstart = () => setIsRecording(true);
-        recognition.onresult = (event) => {
-          const transcript = event.results[0][0].transcript;
-          setMealInput(prev => prev + (prev ? " " : "") + transcript);
-        };
-        recognition.onerror = (event) => {
-          console.error("Mic Error:", event.error);
-          alert("Mic Error: " + event.error);
-        };
-        recognition.onend = () => setIsRecording(false);
-      }
-    }
-  }, []);
-
-  const toggleMic = () => {
-    if (!recognitionRef.current) {
-      return alert("Voice input not supported in this browser. Try Chrome or Safari!");
-    }
-    try {
-      if (isRecording) {
-        recognitionRef.current.stop();
-      } else {
-        recognitionRef.current.start();
-      }
-    } catch (e) {
-      alert("Could not start microphone. Check browser permissions.");
-      console.error(e);
-    }
-  };
-
-  const handleTouchStart = (e, id) => {
-    const item = e.currentTarget;
-    item.dataset.startX = e.touches[0].clientX;
-    item.dataset.startY = e.touches[0].clientY;
-    item.style.transition = 'none';
-  };
-
-  const handleTouchMove = (e) => {
-    const item = e.currentTarget;
-    if (!item.dataset.startX) return;
-    const deltaX = e.touches[0].clientX - parseFloat(item.dataset.startX);
-    const deltaY = e.touches[0].clientY - parseFloat(item.dataset.startY);
-    if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > 10) {
-      const translateX = Math.min(0, Math.max(deltaX, -120));
-      item.style.transform = `translateX(${translateX}px)`;
-      if (deltaX < -15) item.style.boxShadow = '0 4px 6px -1px rgba(239, 68, 68, 0.2)';
-    }
-  };
-
-  const handleTouchEnd = (e, id) => {
-    const item = e.currentTarget;
-    item.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
-    const deltaX = e.changedTouches[0].clientX - parseFloat(item.dataset.startX);
-    if (deltaX < -80) requestDelete(id);
-    item.style.transform = 'translateX(0)';
-    item.style.boxShadow = 'none';
   };
 
   const totals = todaysMeals.reduce((acc, meal) => {
@@ -596,46 +512,12 @@ export default function Home() {
       {activeTab === 'tracker' && !isGuest && (
         <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 relative">
-              <h2 className="text-xl font-semibold mb-4 text-gray-700">Log Meal with AI</h2>
-              <div className="mb-3 relative">
-                <label className="text-xs font-medium text-rose-400 uppercase tracking-wider mb-1 block">Quick Add / Saved Meals</label>
-                <div className="flex w-full">
-                  <input 
-                    ref={quickAddRef} 
-                    type="text" 
-                    value={quickAddInput} 
-                    onChange={(e) => { setQuickAddInput(e.target.value); setShowSuggestions(true); }} 
-                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)} 
-                    className="flex-1 min-w-0 p-2.5 border border-rose-200 rounded-l-xl text-base focus:ring-1 focus:ring-rose-500 focus:outline-none z-10 bg-rose-50/50 box-border" 
-                    placeholder="Type to search or create..." 
-                  />
-                  <button onClick={saveQuickMeal} className="px-3 bg-rose-100 border border-l-0 border-rose-200 rounded-r-xl text-xs text-rose-600 font-medium hover:bg-rose-200 whitespace-nowrap transition box-border">+ Save text</button>
-                </div>
-                {showSuggestions && quickAddInput && savedMeals.filter(m => m.name.toLowerCase().includes(quickAddInput.toLowerCase())).length > 0 && (
-                  <div className="absolute z-20 w-[calc(100%-3rem)] bg-white border border-rose-100 rounded-xl shadow-lg mt-1 max-h-40 overflow-y-auto">
-                    {savedMeals.filter(m => m.name.toLowerCase().includes(quickAddInput.toLowerCase())).map(m => (
-                      <div key={m.id} onMouseDown={() => selectSuggestion(m.name)} className="p-2 hover:bg-rose-50 cursor-pointer text-sm border-b border-rose-50 last:border-0">{m.name}</div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              <div className="relative w-full">
-                <textarea value={mealInput} onChange={(e) => setMealInput(e.target.value)} className="w-full p-3 pr-24 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" rows="3" placeholder="Type, speak, or photograph your meal..."></textarea>
-                <div className="absolute right-3 bottom-3 flex gap-2">
-                  <button onClick={toggleMic} className={`p-2 rounded-lg transition ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-rose-100 text-rose-500 hover:bg-rose-200'}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" /></svg>
-                  </button>
-                  <input type="file" id="cameraInput" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
-                  <button onClick={() => document.getElementById('cameraInput').click()} className="p-2 bg-rose-100 text-rose-500 rounded-lg hover:bg-rose-200 transition">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" /></svg>
-                  </button>
-                </div>
-              </div>
-
-              <button onClick={logMeal} disabled={aiThinking} className="mt-3 w-full bg-rose-500 text-white font-semibold py-3 rounded-xl disabled:opacity-50 hover:bg-rose-600 transition flex justify-center items-center shadow-sm shadow-rose-200">
-                {aiThinking ? 'Analyzing...' : 'Estimate & Log'}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100 flex flex-col items-center justify-center text-center">
+              <Logo className="h-10 w-10 mb-3" />
+              <h2 className="text-xl font-semibold mb-2 text-gray-700">Log a Meal with NibbleBot</h2>
+              <p className="text-sm text-gray-500 mb-4">Tap the chat button below to tell NibbleBot what you ate, or use quick widgets for saved meals.</p>
+              <button onClick={() => setShowChat(true)} className="bg-rose-500 text-white font-semibold py-3 px-6 rounded-xl hover:bg-rose-600 transition">
+                Open Chat
               </button>
             </div>
 
@@ -644,13 +526,14 @@ export default function Home() {
               <div className="space-y-3">
                 {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No meals logged yet.</div>}
                 {todaysMeals.map(meal => (
-                  <div key={meal.id} className="relative overflow-hidden rounded-xl" style={{ backgroundColor: '#fee2e2' }}>
-                    <div className="bg-white p-3 flex justify-between items-start border border-rose-100 rounded-xl" style={{ touchAction: 'pan-y' }} onTouchStart={(e) => handleTouchStart(e, meal.id)} onTouchMove={handleTouchMove} onTouchEnd={(e) => handleTouchEnd(e, meal.id)}>
-                      <div className="mr-2 pointer-events-none">
-                        <p className="font-medium capitalize text-gray-700">{meal.description}</p>
-                        <p className="text-xs text-rose-400 mt-1">P: {meal.protein}g | Fib: {meal.fiber}g | Sod: {meal.sodium}mg</p>
-                      </div>
-                      <div className="font-bold text-rose-500 whitespace-nowrap pointer-events-none">{meal.calories} kcal</div>
+                  <div key={meal.id} className="flex justify-between items-start p-3 border border-rose-100 rounded-xl bg-white">
+                    <div className="mr-2">
+                      <p className="font-medium capitalize text-gray-700">{meal.description}</p>
+                      <p className="text-xs text-rose-400 mt-1">P: {meal.protein}g | Fib: {meal.fiber}g | Sod: {meal.sodium}mg</p>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <div className="font-bold text-rose-500 whitespace-nowrap">{meal.calories} kcal</div>
+                      <button onClick={() => setMealToDelete(meal.id)} className="text-rose-300 hover:text-red-500 text-xs mt-1">Delete</button>
                     </div>
                   </div>
                 ))}
@@ -874,7 +757,7 @@ export default function Home() {
                     ) : (
                       <button onClick={() => startEditSavedMeal(m)} className="text-xs text-rose-400 hover:text-rose-600 font-medium">Edit</button>
                     )}
-                    <button onClick={() => requestDeleteSavedMeal(m.id)} className="text-xs text-rose-400 hover:text-red-500 font-medium">Delete</button>
+                    <button onClick={() => setSavedMealToDelete(m.id)} className="text-xs text-rose-400 hover:text-red-500 font-medium">Delete</button>
                   </div>
                 </div>
               ))}
@@ -922,7 +805,7 @@ export default function Home() {
       {/* Chat Window Modal */}
       {showChat && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:p-4 bg-black/40" onClick={() => setShowChat(false)}>
-          <div className="bg-white w-full sm:max-w-md h-[80vh] sm:h-[600px] rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="bg-white w-full sm:max-w-md h-[85vh] sm:h-[600px] rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center p-4 border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <Logo className="h-6 w-6" />
@@ -934,20 +817,50 @@ export default function Home() {
                 </svg>
               </button>
             </div>
+            
             <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
               {chatMessages.length === 0 && (
                 <div className="text-center text-gray-400 text-sm mt-10">
                   <Logo className="h-10 w-10 mx-auto mb-2" />
-                  <p>Ask me anything about food, nutrition, or recipes!</p>
+                  <p>Hi! Tell me what you ate, or ask me a nutrition question!</p>
                 </div>
               )}
+              
               {chatMessages.map(msg => (
                 <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-3 rounded-2xl ${msg.role === 'user' ? 'bg-rose-500 text-white rounded-br-none' : 'bg-white border border-gray-100 text-gray-700 rounded-bl-none'}`}>
+                  <div className={`max-w-[90%] p-3 rounded-2xl ${msg.role === 'user' ? 'bg-rose-500 text-white rounded-br-none' : 'bg-white border border-gray-100 text-gray-700 rounded-bl-none'}`}>
                     <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                    
+                    {/* Render Food Suggestion Card */}
+                    {msg.type === 'food_suggestion' && msg.meal && (
+                      <div className="mt-3 bg-rose-50 p-3 rounded-xl border border-rose-100">
+                        <p className="font-semibold text-gray-800 text-sm mb-2">{msg.meal.description}</p>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-3">
+                          <div>Calories: <span className="font-bold">{msg.meal.calories}</span></div>
+                          <div>Protein: <span className="font-bold">{msg.meal.protein}g</span></div>
+                          <div>Fiber: <span className="font-bold">{msg.meal.fiber}g</span></div>
+                          <div>Sodium: <span className="font-bold">{msg.meal.sodium}mg</span></div>
+                          <div>Total Sugar: <span className="font-bold">{msg.meal.total_sugar}g</span></div>
+                          <div>Added Sugar: <span className="font-bold">{msg.meal.added_sugar}g</span></div>
+                        </div>
+                        {msg.logged ? (
+                          <button disabled className="w-full bg-green-500 text-white py-2 rounded-lg text-xs font-semibold">
+                            Added to Log ✓
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => addMealFromChat(msg.meal, msg.id)} 
+                            className="w-full bg-rose-500 text-white py-2 rounded-lg text-xs font-semibold hover:bg-rose-600"
+                          >
+                            Add to Log
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
+              
               {chatThinking && (
                 <div className="flex justify-start">
                   <div className="bg-white border border-gray-100 p-3 rounded-2xl rounded-bl-none">
@@ -960,7 +873,54 @@ export default function Home() {
                 </div>
               )}
             </div>
-            <div className="p-4 border-t border-gray-100 bg-white">
+
+            {/* Widgets & Input Area */}
+            <div className="p-3 border-t border-gray-100 bg-white">
+              <div className="flex gap-2 mb-2">
+                <button 
+                  onClick={() => { setShowSavedWidget(!showSavedWidget); setShowRecentWidget(false); }} 
+                  className={`text-xs px-3 py-1 rounded-full ${showSavedWidget ? 'bg-rose-500 text-white' : 'bg-gray-100 text-gray-600'}`}
+                >
+                  ⭐ Saved
+                </button>
+                <button 
+                  onClick={() => { setShowRecentWidget(!showRecentWidget); setShowSavedWidget(false); }} 
+                  className={`text-xs px-3 py-1 rounded-full ${showRecentWidget ? 'bg-rose-500 text-white' : 'bg-gray-100 text-gray-600'}`}
+                >
+                  🕒 Recent
+                </button>
+              </div>
+
+              {showSavedWidget && (
+                <div className="max-h-32 overflow-y-auto border border-gray-100 rounded-lg mb-2 bg-gray-50">
+                  {savedMeals.length === 0 && <p className="p-3 text-xs text-gray-400">No saved meals yet.</p>}
+                  {savedMeals.map(m => (
+                    <div 
+                      key={m.id} 
+                      onClick={() => { setChatInput(m.name); setShowSavedWidget(false); }} 
+                      className="p-2 text-xs hover:bg-rose-50 cursor-pointer border-b border-gray-100 last:border-0"
+                    >
+                      {m.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showRecentWidget && (
+                <div className="max-h-32 overflow-y-auto border border-gray-100 rounded-lg mb-2 bg-gray-50">
+                  {recentMeals.length === 0 && <p className="p-3 text-xs text-gray-400">No recent meals yet.</p>}
+                  {recentMeals.map((m, idx) => (
+                    <div 
+                      key={idx} 
+                      onClick={() => { setChatInput(`I ate ${m.description}`); setShowRecentWidget(false); }} 
+                      className="p-2 text-xs hover:bg-rose-50 cursor-pointer border-b border-gray-100 last:border-0"
+                    >
+                      {m.description}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <input
                   type="text"
