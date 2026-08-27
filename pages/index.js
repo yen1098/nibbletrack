@@ -266,7 +266,6 @@ export default function Home() {
       const data = await res.json();
       
       if (data.reply) {
-        // The API returns a JSON string, so we parse it
         const parsed = JSON.parse(data.reply);
         
         if (parsed.type === 'food_suggestion') {
@@ -306,7 +305,6 @@ export default function Home() {
       setTodaysMeals(prev => [...prev, data]);
       fetchHistory(session.user.id);
       fetchRecentMeals(session.user.id);
-      // Update chat message to show it was logged
       setChatMessages(prev => prev.map(m => m.id === msgId ? { ...m, logged: true } : m));
     } else {
       alert("Error logging meal");
@@ -464,7 +462,7 @@ export default function Home() {
           <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
           <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
           <script src="https://cdn.tailwindcss.com"></script>
-          <style>{`html, body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }`}</style>
+          <style>{`html, body { overscroll-behavior-y: contain; -webkit-tap-highlight-color: transparent; }`}</style>
         </Head>
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-rose-100 max-w-md w-full">
           <div className="flex items-center justify-center gap-2 mb-6">
@@ -493,7 +491,15 @@ export default function Home() {
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
         <style>{`
-          html, body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+          html, body {
+            overscroll-behavior-y: contain; 
+            -webkit-tap-highlight-color: transparent;
+            -webkit-text-size-adjust: 100%;
+            scroll-behavior: smooth;
+          }
+          canvas {
+            touch-action: pan-y;
+          }
           ${generateThemeCSS(themeColor)}
         `}</style>
       </Head>
