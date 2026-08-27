@@ -417,6 +417,35 @@ export default function Home() {
     setEditingRecipeId(null);
   };
 
+  // Swipe to Delete Logic
+  const handleTouchStart = (e, id) => {
+    const item = e.currentTarget;
+    item.dataset.startX = e.touches[0].clientX;
+    item.dataset.startY = e.touches[0].clientY;
+    item.style.transition = 'none';
+  };
+
+  const handleTouchMove = (e) => {
+    const item = e.currentTarget;
+    if (!item.dataset.startX) return;
+    const deltaX = e.touches[0].clientX - parseFloat(item.dataset.startX);
+    const deltaY = e.touches[0].clientY - parseFloat(item.dataset.startY);
+    if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > 10) {
+      const translateX = Math.min(0, Math.max(deltaX, -120));
+      item.style.transform = `translateX(${translateX}px)`;
+      if (deltaX < -15) item.style.boxShadow = '0 4px 6px -1px rgba(239, 68, 68, 0.2)';
+    }
+  };
+
+  const handleTouchEnd = (e, id) => {
+    const item = e.currentTarget;
+    item.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
+    const deltaX = e.changedTouches[0].clientX - parseFloat(item.dataset.startX);
+    if (deltaX < -80) requestDelete(id);
+    item.style.transform = 'translateX(0)';
+    item.style.boxShadow = 'none';
+  };
+
   const totals = todaysMeals.reduce((acc, meal) => {
     const cal = parseRange(meal.calories), pro = parseRange(meal.protein), fib = parseRange(meal.fiber), ts = parseRange(meal.total_sugar), as = parseRange(meal.added_sugar), sod = parseRange(meal.sodium);
     acc.caloriesMin += cal[0]; acc.caloriesMax += cal[1];
@@ -532,14 +561,13 @@ export default function Home() {
               <div className="space-y-3">
                 {todaysMeals.length === 0 && <div className="flex items-center justify-center gap-2 text-rose-300 text-sm py-4"><Logo className="h-5 w-5" /> No meals logged yet.</div>}
                 {todaysMeals.map(meal => (
-                  <div key={meal.id} className="flex justify-between items-start p-3 border border-rose-100 rounded-xl bg-white">
-                    <div className="mr-2">
-                      <p className="font-medium capitalize text-gray-700">{meal.description}</p>
-                      <p className="text-xs text-rose-400 mt-1">P: {meal.protein}g | Fib: {meal.fiber}g | Sod: {meal.sodium}mg</p>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <div className="font-bold text-rose-500 whitespace-nowrap">{meal.calories} kcal</div>
-                      <button onClick={() => setMealToDelete(meal.id)} className="text-rose-300 hover:text-red-500 text-xs mt-1">Delete</button>
+                  <div key={meal.id} className="relative overflow-hidden rounded-xl" style={{ backgroundColor: '#fee2e2' }}>
+                    <div className="bg-white p-3 flex justify-between items-start border border-rose-100 rounded-xl" style={{ touchAction: 'pan-y' }} onTouchStart={(e) => handleTouchStart(e, meal.id)} onTouchMove={handleTouchMove} onTouchEnd={(e) => handleTouchEnd(e, meal.id)}>
+                      <div className="mr-2 pointer-events-none">
+                        <p className="font-medium capitalize text-gray-700">{meal.description}</p>
+                        <p className="text-xs text-rose-400 mt-1">P: {meal.protein}g | Fib: {meal.fiber}g | Sod: {meal.sodium}mg</p>
+                      </div>
+                      <div className="font-bold text-rose-500 whitespace-nowrap pointer-events-none">{meal.calories} kcal</div>
                     </div>
                   </div>
                 ))}
