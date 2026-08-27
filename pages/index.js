@@ -51,7 +51,6 @@ const generateThemeCSS = (themeKey) => {
   `;
 };
 
-// Helper to render recipe details with clickable checkboxes
 const renderRecipeDetails = (details) => {
   if (!details) return null;
   return details.split('\n').map((line, index) => {
@@ -80,6 +79,7 @@ export default function Home() {
   const [goals, setGoals] = useState({ calories_goal: 1200, protein_goal: 90, fiber_goal: 30, added_sugar_goal: 25, sodium_goal: 2000 });
   
   const [mealInput, setMealInput] = useState('');
+  const [imageBase64, setImageBase64] = useState(null);
   const [aiThinking, setAiThinking] = useState(false);
   const [activeTab, setActiveTab] = useState('tracker');
   const [email, setEmail] = useState('');
@@ -111,6 +111,13 @@ export default function Home() {
   
   const [themeColor, setThemeColor] = useState('rose');
 
+  // Chat State
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatThinking, setChatThinking] = useState(false);
+  const chatScrollRef = useRef(null);
+
   const quickAddRef = useRef(null);
   const recognitionRef = useRef(null);
 
@@ -132,6 +139,12 @@ export default function Home() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatMessages, chatThinking]);
 
   const fetchUserData = async (userId) => {
     fetchMeals(userId);
@@ -233,6 +246,18 @@ export default function Home() {
     setRecipeSubTab('discover');
   };
 
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageBase64(reader.result);
+        setMealInput(prev => prev + (prev ? " " : "") + "[Photo attached]");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const logMeal = async () => {
     if (!mealInput) return;
     setAiThinking(true);
@@ -240,7 +265,7 @@ export default function Home() {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mealText: mealInput.replace("[Photo attached]", "").trim() })
+        body: JSON.stringify({ mealText: mealInput.replace("[Photo attached]", "").trim(), imageBase64 })
       });
       const aiData = await response.json();
       if (aiData.error) throw new Error(aiData.error);
@@ -252,6 +277,7 @@ export default function Home() {
 
       setTodaysMeals([...todaysMeals, data]);
       setMealInput('');
+      setImageBase64(null);
       fetchHistory(session.user.id);
     } catch (error) {
       alert("Error logging meal: " + error.message);
@@ -382,24 +408,71 @@ export default function Home() {
     setEditingRecipeId(null);
   };
 
+  // Chat Logic
+  const handleSendChat = async () => {
+    if (!chatInput.trim()) return;
+    const userMsg = { text: chatInput, role: 'user', id: Date.now() };
+    const history = chatMessages.map(m => ({ text: m.text, role: m.role === 'user' ? 'user' : 'model' }));
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setChatThinking(true);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: chatInput, history })
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setChatMessages(prev => [...prev, { text: data.reply, role: 'assistant', id: Date.now() + 1 }]);
+      } else {
+        alert(data.error || "Chat error");
+      }
+    } catch (e) {
+      alert("Failed to get response");
+    } finally {
+      setChatThinking(false);
+    }
+  };
+
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'en-US';
-      recognition.interimResults = false;
-      recognitionRef.current = recognition;
-      recognition.onstart = () => setIsRecording(true);
-      recognition.onresult = (event) => setMealInput(prev => prev + (prev ? " " : "") + event.results[0][0].transcript);
-      recognition.onerror = (event) => alert("Mic Error: " + event.error);
-      recognition.onend = () => setIsRecording(false);
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognitionRef.current = recognition;
+        
+        recognition.onstart = () => setIsRecording(true);
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          setMealInput(prev => prev + (prev ? " " : "") + transcript);
+        };
+        recognition.onerror = (event) => {
+          console.error("Mic Error:", event.error);
+          alert("Mic Error: " + event.error);
+        };
+        recognition.onend = () => setIsRecording(false);
+      }
     }
   }, []);
 
   const toggleMic = () => {
-    if (!recognitionRef.current) return alert("Voice input not supported.");
-    if (isRecording) recognitionRef.current.stop();
-    else recognitionRef.current.start();
+    if (!recognitionRef.current) {
+      return alert("Voice input not supported in this browser. Try Chrome or Safari!");
+    }
+    try {
+      if (isRecording) {
+        recognitionRef.current.stop();
+      } else {
+        recognitionRef.current.start();
+      }
+    } catch (e) {
+      alert("Could not start microphone. Check browser permissions.");
+      console.error(e);
+    }
   };
 
   const handleTouchStart = (e, id) => {
@@ -441,7 +514,6 @@ export default function Home() {
     return acc;
   }, { caloriesMin: 0, caloriesMax: 0, proteinMin: 0, proteinMax: 0, fiberMin: 0, fiberMax: 0, totalSugarMin: 0, totalSugarMax: 0, addedSugarMin: 0, addedSugarMax: 0, sodiumMin: 0, sodiumMax: 0 });
 
-  // Using your uploaded PNG for the logo
   const Logo = ({ className }) => (
     <img src="/apple-touch-icon.png" className={className} alt="NibbleTrack Logo" style={{ borderRadius: '20%' }} />
   );
@@ -550,10 +622,14 @@ export default function Home() {
               </div>
               
               <div className="relative w-full">
-                <textarea value={mealInput} onChange={(e) => setMealInput(e.target.value)} className="w-full p-3 pr-14 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" rows="3" placeholder="Type or speak your meal..."></textarea>
+                <textarea value={mealInput} onChange={(e) => setMealInput(e.target.value)} className="w-full p-3 pr-24 border border-rose-200 rounded-xl text-base focus:ring-2 focus:ring-rose-300 focus:outline-none bg-rose-50/30 box-border" rows="3" placeholder="Type, speak, or photograph your meal..."></textarea>
                 <div className="absolute right-3 bottom-3 flex gap-2">
                   <button onClick={toggleMic} className={`p-2 rounded-lg transition ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-rose-100 text-rose-500 hover:bg-rose-200'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" /></svg>
+                  </button>
+                  <input type="file" id="cameraInput" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
+                  <button onClick={() => document.getElementById('cameraInput').click()} className="p-2 bg-rose-100 text-rose-500 rounded-lg hover:bg-rose-200 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" /></svg>
                   </button>
                 </div>
               </div>
@@ -828,6 +904,82 @@ export default function Home() {
             <div className="flex gap-3">
               <button onClick={cancelDeleteSavedMeal} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition">Cancel</button>
               <button onClick={confirmDeleteSavedMeal} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Chat Button */}
+      <button 
+        onClick={() => setShowChat(true)} 
+        className="fixed bottom-24 right-5 z-40 bg-rose-500 text-white p-4 rounded-full shadow-lg shadow-rose-300 hover:bg-rose-600 transition flex items-center justify-center"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+        </svg>
+      </button>
+
+      {/* Chat Window Modal */}
+      {showChat && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:p-4 bg-black/40" onClick={() => setShowChat(false)}>
+          <div className="bg-white w-full sm:max-w-md h-[80vh] sm:h-[600px] rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Logo className="h-6 w-6" />
+                <h3 className="font-semibold text-gray-800">NibbleBot Chat</h3>
+              </div>
+              <button onClick={() => setShowChat(false)} className="text-gray-400 hover:text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+              {chatMessages.length === 0 && (
+                <div className="text-center text-gray-400 text-sm mt-10">
+                  <Logo className="h-10 w-10 mx-auto mb-2" />
+                  <p>Ask me anything about food, nutrition, or recipes!</p>
+                </div>
+              )}
+              {chatMessages.map(msg => (
+                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] p-3 rounded-2xl ${msg.role === 'user' ? 'bg-rose-500 text-white rounded-br-none' : 'bg-white border border-gray-100 text-gray-700 rounded-bl-none'}`}>
+                    <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                  </div>
+                </div>
+              ))}
+              {chatThinking && (
+                <div className="flex justify-start">
+                  <div className="bg-white border border-gray-100 p-3 rounded-2xl rounded-bl-none">
+                    <div className="flex gap-1">
+                      <span className="h-2 w-2 bg-gray-300 rounded-full animate-bounce"></span>
+                      <span className="h-2 w-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                      <span className="h-2 w-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-gray-100 bg-white">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
+                  className="flex-1 p-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-1 focus:ring-rose-400"
+                  placeholder="Type a message..."
+                />
+                <button
+                  onClick={handleSendChat}
+                  disabled={chatThinking}
+                  className="bg-rose-500 text-white p-3 rounded-xl hover:bg-rose-600 transition disabled:opacity-50"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
